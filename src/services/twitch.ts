@@ -75,7 +75,7 @@ export async function startTwitchMonitor(client: Client) {
             .setTitle(stream.title)
             .setURL(`https://twitch.tv/${login}`)
             .setAuthor({
-              name: `@everyone ${stream.user_name} is now live!`,
+              name: `${stream.user_name} is now live!`,
               iconURL:
                 "https://cdn-icons-png.flaticon.com/512/5968/5968819.png",
             })
@@ -105,7 +105,7 @@ export async function startTwitchMonitor(client: Client) {
               )) as TextChannel;
               if (channel) {
                 await channel.send({
-                  content: `🚀 Hey! **${stream.user_name}** just went live!`,
+                  content: `@everyone 🚀 Hey! **${stream.user_name}** just went live!`,
                   embeds: [embed],
                 });
               }
