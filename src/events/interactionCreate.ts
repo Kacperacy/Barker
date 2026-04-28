@@ -1,5 +1,6 @@
 import { Client, Events } from "discord.js";
 import type { Command } from "../types";
+import { logger } from "../utils/logger";
 
 export default (client: Client, commands: Map<string, Command>) => {
   client.on(Events.InteractionCreate, async (interaction) => {
@@ -11,7 +12,7 @@ export default (client: Client, commands: Map<string, Command>) => {
     try {
       await command.execute(interaction);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
       if (interaction.replied || interaction.deferred) {
         await interaction.followUp({
           content: "There was an error while executing this command!",

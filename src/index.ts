@@ -6,6 +6,7 @@ import readyEvent from "./events/ready";
 import interactionEvent from "./events/interactionCreate";
 import { env } from "./config";
 import { closeDatabase } from "./services/database";
+import { logger } from "./utils/logger";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -36,7 +37,7 @@ interactionEvent(client, commands);
 
 // Graceful shutdown
 const shutdown = () => {
-  console.log("🛑 Shutting down gracefully...");
+  logger.info("🛑 Shutting down gracefully...");
   client.destroy();
   closeDatabase();
   process.exit(0);

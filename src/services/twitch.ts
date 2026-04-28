@@ -1,6 +1,7 @@
 import { Client, TextChannel, EmbedBuilder } from "discord.js";
 import { getAllUniqueStreamers, getChannelsForStreamer } from "./database";
 import { env } from "../config";
+import { logger } from "../utils/logger";
 
 const liveStreamers = new Set<string>();
 let twitchAccessToken = "";
@@ -47,7 +48,7 @@ async function getStreamsData(streamers: string[]) {
 
 export async function startTwitchMonitor(client: Client) {
   twitchAccessToken = await getTwitchToken();
-  console.log("Connected to Twitch API");
+  logger.info("Connected to Twitch API");
 
   setInterval(async () => {
     try {
@@ -109,7 +110,7 @@ export async function startTwitchMonitor(client: Client) {
                 });
               }
             } catch (err) {
-              console.error(
+              logger.error(
                 `Could not send message to channel ${channelId}:`,
                 err,
               );
@@ -124,9 +125,9 @@ export async function startTwitchMonitor(client: Client) {
         }
       }
     } catch (e) {
-      console.error("Twitch monitor error:", e);
+      logger.error("Twitch monitor error:", e);
     } finally {
-      console.log(
+      logger.info(
         `Checked Twitch streams. Currently live: ${[...liveStreamers].join(", ") || "None"}`,
       );
     }
