@@ -1,6 +1,13 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
+import {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  AutocompleteInteraction,
+} from "discord.js";
 import type { Command } from "../types";
-import { removeSubscription } from "../services/database";
+import {
+  removeSubscription,
+  getGuildSubscriptions,
+} from "../services/database";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
@@ -9,10 +16,30 @@ export const command: Command = {
     .addStringOption((opt) =>
       opt
         .setName("username")
-        .setDescription("Streamer's Twitch username")
-        .setRequired(true),
+        .setDescription("Select the streamer's Twitch username")
+        .setRequired(true)
+        .setAutocomplete(true),
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  async autocomplete(interaction: AutocompleteInteraction) {
+    const guildId = interaction.guildId;
+    if (!guildId) return interaction.respond([]);
+
+    const focusedValue = interaction.options.getFocused().toLowerCase();
+    const subs = getGuildSubscriptions(guildId);
+
+    const filtered = subs.filter((sub) =>
+      sub.streamer_name.startsWith(focusedValue),
+    );
+
+    await interaction.respond(
+      filtered
+        .slice(0, 25)
+        .map((sub) => ({ name: sub.streamer_name, value: sub.streamer_name })),
+    );
+  },
+
   async execute(interaction) {
     const username = interaction.options.getString("username")!.toLowerCase();
     const guildId = interaction.guildId;

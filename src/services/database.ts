@@ -64,3 +64,9 @@ export const getChannelsForStreamer = (streamerName: string): string[] => {
     .all(streamerName.toLowerCase()) as { channel_id: string }[];
   return res.map((row) => row.channel_id);
 };
+
+export const getGuildSubscriptions = (guildId: string): Subscription[] => {
+  return db
+    .query("SELECT * FROM subscriptions WHERE guild_id = ?1")
+    .all(guildId) as Subscription[];
+};

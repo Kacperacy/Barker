@@ -4,25 +4,36 @@ import { logger } from "../utils/logger";
 
 export default (client: Client, commands: Map<string, Command>) => {
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
+    if (interaction.isChatInputCommand()) {
+      const command = commands.get(interaction.commandName);
+      if (!command) return;
 
-    const command = commands.get(interaction.commandName);
-    if (!command) return;
+      try {
+        await command.execute(interaction);
+      } catch (e) {
+        logger.error("Command execution error:", e);
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp({
+            content: "There was an error while executing this command!",
+            ephemeral: true,
+          });
+        } else {
+          await interaction.reply({
+            content: "There was an error while executing this command!",
+            ephemeral: true,
+          });
+        }
+      }
+    } else if (interaction.isAutocomplete()) {
+      const command = commands.get(interaction.commandName);
+      if (!command) return;
 
-    try {
-      await command.execute(interaction);
-    } catch (e) {
-      logger.error(e);
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: "There was an error while executing this command!",
-          ephemeral: true,
-        });
-      } else {
-        await interaction.reply({
-          content: "There was an error while executing this command!",
-          ephemeral: true,
-        });
+      try {
+        if (command.autocomplete) {
+          await command.autocomplete(interaction);
+        }
+      } catch (e) {
+        logger.error("Autocomplete error:", e);
       }
     }
   });
