@@ -50,12 +50,11 @@ export async function startTwitchMonitor(client: Client) {
   twitchAccessToken = await getTwitchToken();
   logger.info("Connected to Twitch API");
 
-  setInterval(async () => {
+  const checkTwitchStreams = async () => {
     try {
       const streamersToCheck = getAllUniqueStreamers();
       if (streamersToCheck.length === 0) return;
 
-      // Warning for less than 100 streamers - Twitch API allows max 100 logins per request
       const streams = await getStreamsData(streamersToCheck);
 
       const currentLiveLogins = new Set(
@@ -126,10 +125,10 @@ export async function startTwitchMonitor(client: Client) {
       }
     } catch (e) {
       logger.error("Twitch monitor error:", e);
-    } finally {
-      logger.info(
-        `Checked Twitch streams. Currently live: ${[...liveStreamers].join(", ") || "None"}`,
-      );
     }
-  }, 180_000); // Check every 3 minutes
+  };
+
+  await checkTwitchStreams();
+
+  setInterval(checkTwitchStreams, 180_000);
 }
