@@ -22,7 +22,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/discord-bot # Replace 'discord-bot' with your Docker Hub repo name
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/barker
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5

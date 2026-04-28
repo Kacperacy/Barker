@@ -1,11 +1,11 @@
 # Use the official Bun image
-FROM oven/bun:latest
+FROM oven/bun:alpine
 
 # Set the working directory inside the container
 WORKDIR /app
 
 # Copy package files and install dependencies
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 # Use --frozen-lockfile for deterministic builds and --production to skip dev dependencies
 RUN bun install --frozen-lockfile --production
 
