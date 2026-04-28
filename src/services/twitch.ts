@@ -74,7 +74,7 @@ export async function startTwitchMonitor(client: Client) {
             .setTitle(stream.title)
             .setURL(`https://twitch.tv/${login}`)
             .setAuthor({
-              name: `${stream.user_name} is now live!`,
+              name: `@everyone ${stream.user_name} is now live!`,
               iconURL:
                 "https://cdn-icons-png.flaticon.com/512/5968/5968819.png",
             })
