@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "./utils/logger";
 
 // Define required environment variables and their types
 const envSchema = z.object({
@@ -11,8 +12,8 @@ const envSchema = z.object({
 const _env = envSchema.safeParse(process.env);
 
 if (!_env.success) {
-  console.error("CONFIGURATION ERROR (.env):");
-  console.error(_env.error.format());
+  logger.error("CONFIGURATION ERROR (.env):");
+  logger.error(_env.error.format());
   process.exit(1);
 }
 
