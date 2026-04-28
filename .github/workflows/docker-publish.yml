@@ -4,6 +4,9 @@ on:
   push:
     branches: ["main"]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -23,6 +26,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/barker
+          tags: |
+            type=raw,value=latest
+            type=ref,event=branch
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
