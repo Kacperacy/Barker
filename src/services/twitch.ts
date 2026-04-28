@@ -125,6 +125,10 @@ export async function startTwitchMonitor(client: Client) {
       }
     } catch (e) {
       console.error("Twitch monitor error:", e);
+    } finally {
+      console.log(
+        `Checked Twitch streams. Currently live: ${[...liveStreamers].join(", ") || "None"}`,
+      );
     }
   }, 180_000); // Check every 3 minutes
 }
