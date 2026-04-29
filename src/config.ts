@@ -15,7 +15,7 @@ const _env = envSchema.safeParse(process.env);
 
 if (!_env.success) {
   logger.error("CONFIGURATION ERROR (.env):");
-  logger.error(_env.error.format());
+  logger.error(JSON.stringify(_env.error.format(), null, 2));
   process.exit(1);
 }
 
