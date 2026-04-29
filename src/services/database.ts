@@ -14,18 +14,35 @@ db.query(
     guild_id TEXT,
     channel_id TEXT,
     streamer_name TEXT,
+    custom_message TEXT,
     PRIMARY KEY (guild_id, streamer_name)
   )
 `,
 ).run();
 
-try {
-  db.query("ALTER TABLE subscriptions ADD COLUMN custom_message TEXT").run();
-} catch (e) {}
-
 db.query(
   `CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`,
 ).run();
+
+db.query(
+  `CREATE TABLE IF NOT EXISTS active_messages (
+    streamer_name TEXT,
+    channel_id TEXT,
+    message_id TEXT,
+    PRIMARY KEY (streamer_name, channel_id)
+  )`,
+).run();
+
+export interface Subscription {
+  guild_id: string;
+  channel_id: string;
+  streamer_name: string;
+  custom_message?: string | null;
+}
+
+export const closeDatabase = () => {
+  db.close();
+};
 
 export const setConfig = (key: string, value: string) => {
   db.query("INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)").run(
@@ -39,17 +56,6 @@ export const getConfig = (key: string): string | null => {
     value: string;
   } | null;
   return res ? res.value : null;
-};
-
-export interface Subscription {
-  guild_id: string;
-  channel_id: string;
-  streamer_name: string;
-  custom_message?: string | null;
-}
-
-export const closeDatabase = () => {
-  db.close();
 };
 
 export const addSubscription = (
@@ -104,4 +110,33 @@ export const getGuildSubscriptions = (guildId: string): Subscription[] => {
   return db
     .query("SELECT * FROM subscriptions WHERE guild_id = ?1")
     .all(guildId) as Subscription[];
+};
+
+export const saveActiveMessage = (
+  streamerName: string,
+  channelId: string,
+  messageId: string,
+) => {
+  db.query(
+    `INSERT OR REPLACE INTO active_messages (streamer_name, channel_id, message_id) VALUES (?1, ?2, ?3)`,
+  ).run(streamerName.toLowerCase(), channelId, messageId);
+};
+
+export const getActiveMessages = (
+  streamerName: string,
+): { channel_id: string; message_id: string }[] => {
+  return db
+    .query(
+      "SELECT channel_id, message_id FROM active_messages WHERE streamer_name = ?1",
+    )
+    .all(streamerName.toLowerCase()) as {
+    channel_id: string;
+    message_id: string;
+  }[];
+};
+
+export const clearActiveMessages = (streamerName: string) => {
+  db.query("DELETE FROM active_messages WHERE streamer_name = ?1").run(
+    streamerName.toLowerCase(),
+  );
 };

@@ -4,6 +4,9 @@ import {
   getSubscriptionsForStreamer,
   setConfig,
   getConfig,
+  saveActiveMessage,
+  getActiveMessages,
+  clearActiveMessages,
 } from "./database";
 import { env } from "../config";
 import { logger } from "../utils/logger";
@@ -71,26 +74,35 @@ export async function subscribeToStreamer(login: string) {
   if (!broadcasterId) return logger.error(`Cannot find Twitch ID for ${login}`);
 
   const token = await getValidUserToken();
-  const res = await fetch(
-    "https://api.twitch.tv/helix/eventsub/subscriptions",
-    {
-      method: "POST",
-      headers: {
-        "Client-ID": env.TWITCH_CLIENT_ID,
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        type: "stream.online",
-        version: "1",
-        condition: { broadcaster_user_id: broadcasterId },
-        transport: { method: "websocket", session_id: sessionId },
-      }),
-    },
-  );
 
-  if (res.ok) logger.info(`Subscribed to EventSub for ${login}`);
-  else logger.error(`Failed to subscribe to ${login}: ${await res.text()}`);
+  const subscribeEvent = async (eventType: string) => {
+    const res = await fetch(
+      "https://api.twitch.tv/helix/eventsub/subscriptions",
+      {
+        method: "POST",
+        headers: {
+          "Client-ID": env.TWITCH_CLIENT_ID,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: eventType,
+          version: "1",
+          condition: { broadcaster_user_id: broadcasterId },
+          transport: { method: "websocket", session_id: sessionId },
+        }),
+      },
+    );
+
+    if (res.ok) logger.info(`Subscribed to ${eventType} for ${login}`);
+    else
+      logger.error(
+        `Failed to subscribe to ${eventType} for ${login}: ${await res.text()}`,
+      );
+  };
+
+  await subscribeEvent("stream.online");
+  await subscribeEvent("stream.offline");
 }
 
 async function getStreamData(login: string) {
@@ -112,8 +124,7 @@ export async function startTwitchMonitor(client: Client) {
   await getValidUserToken();
 
   ws = new WebSocket("wss://eventsub.wss.twitch.tv/ws");
-  ws.onopen = () =>
-    logger.info("📡 Connecting to Twitch EventSub WebSocket...");
+  ws.onopen = () => logger.info("Connecting to Twitch EventSub WebSocket...");
 
   ws.onmessage = async (event) => {
     const msg = JSON.parse(event.data.toString());
@@ -132,9 +143,9 @@ export async function startTwitchMonitor(client: Client) {
     if (messageType === "notification") {
       const eventType = msg.metadata.subscription_type;
       const eventData = msg.payload.event;
+      const login = eventData.broadcaster_user_login.toLowerCase();
 
       if (eventType === "stream.online") {
-        const login = eventData.broadcaster_user_login.toLowerCase();
         logger.info(`EVENT TRIGGERED: ${login} went live!`);
 
         setTimeout(async () => {
@@ -176,13 +187,18 @@ export async function startTwitchMonitor(client: Client) {
                 sub.channel_id,
               )) as TextChannel;
               if (channel) {
-                let textContent = `@everyone 🚀 Hey! **${stream.user_name}** just went live!`;
+                let textContent = `@everyone Hey! **${stream.user_name}** just went live!`;
                 if (sub.custom_message) {
                   textContent = sub.custom_message
                     .replace(/{streamer}/gi, stream.user_name)
                     .replace(/{game}/gi, stream.game_name || "something");
                 }
-                await channel.send({ content: textContent, embeds: [embed] });
+
+                const sentMessage = await channel.send({
+                  content: textContent,
+                  embeds: [embed],
+                });
+                saveActiveMessage(login, channel.id, sentMessage.id);
               }
             } catch (err) {
               logger.error(
@@ -192,6 +208,50 @@ export async function startTwitchMonitor(client: Client) {
             }
           }
         }, 5000);
+      }
+
+      if (eventType === "stream.offline") {
+        logger.info(`EVENT TRIGGERED: ${login} went offline!`);
+
+        const activeMessages = getActiveMessages(login);
+        if (activeMessages.length === 0) return;
+
+        const embedOffline = new EmbedBuilder()
+          .setColor(0x808080)
+          .setAuthor({
+            name: `${eventData.broadcaster_user_name} was live`,
+            iconURL: "https://cdn-icons-png.flaticon.com/512/5968/5968819.png",
+          })
+          .setTitle("Stream has ended")
+          .setURL(`https://twitch.tv/${login}`)
+          .setDescription("Catch them next time!")
+          .setTimestamp();
+
+        for (const msgData of activeMessages) {
+          try {
+            const channel = (await client.channels.fetch(
+              msgData.channel_id,
+            )) as TextChannel;
+            if (channel) {
+              const messageToEdit = await channel.messages.fetch(
+                msgData.message_id,
+              );
+              if (messageToEdit) {
+                await messageToEdit.edit({
+                  content: `~~${eventData.broadcaster_user_name}~~ (Offline)`,
+                  embeds: [embedOffline],
+                });
+              }
+            }
+          } catch (err) {
+            logger.error(
+              `Could not edit offline message in channel ${msgData.channel_id}:`,
+              err,
+            );
+          }
+        }
+
+        clearActiveMessages(login);
       }
     }
 
