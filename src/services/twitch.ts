@@ -1,5 +1,5 @@
 import { Client, TextChannel, EmbedBuilder } from "discord.js";
-import { getAllUniqueStreamers, getChannelsForStreamer } from "./database";
+import { getAllUniqueStreamers, getSubscriptionsForStreamer } from "./database";
 import { env } from "../config";
 import { logger } from "../utils/logger";
 
@@ -67,7 +67,7 @@ export async function startTwitchMonitor(client: Client) {
         if (!liveStreamers.has(login)) {
           liveStreamers.add(login);
 
-          const channelIds = getChannelsForStreamer(login);
+          const subs = getSubscriptionsForStreamer(login);
 
           const embed = new EmbedBuilder()
             .setColor(0x9146ff)
@@ -97,21 +97,33 @@ export async function startTwitchMonitor(client: Client) {
             )
             .setTimestamp();
 
-          for (const channelId of channelIds) {
+          for (const sub of subs) {
             try {
               const channel = (await client.channels.fetch(
-                channelId,
+                sub.channel_id,
               )) as TextChannel;
               if (channel) {
+                let textContent = `@everyone 🚀 Hey! **${stream.user_name}** just went live!`;
+
+                if (sub.custom_message) {
+                  textContent = sub.custom_message
+                    .replace(/{streamer}/gi, stream.user_name)
+                    .replace(/{game}/gi, stream.game_name || "something");
+                }
+
                 await channel.send({
-                  content: `@everyone 🚀 Hey! **${stream.user_name}** just went live!`,
+                  content: textContent,
                   embeds: [embed],
                 });
               }
             } catch (err) {
               logger.error(
-                `Could not send message to channel ${channelId}:`,
+                `Could not send message to channel ${sub.channel_id}:`,
                 err,
+              );
+            } finally {
+              logger.info(
+                `Checked Twitch streams. Currently live: ${[...liveStreamers].join(", ") || "None"}`,
               );
             }
           }
@@ -134,5 +146,5 @@ export async function startTwitchMonitor(client: Client) {
 
   await checkTwitchStreams();
 
-  setInterval(checkTwitchStreams, 180_000);
+  setInterval(checkTwitchStreams, 30 * 1000);
 }

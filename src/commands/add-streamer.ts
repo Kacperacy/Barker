@@ -9,7 +9,7 @@ import { addSubscription } from "../services/database";
 export const command: Command = {
   data: new SlashCommandBuilder()
     .setName("add-streamer")
-    .setDescription("Adds a Twitch streamer to monitor on a specific channel")
+    .setDescription("Adds a Twitch streamer to monitor")
     .addStringOption((opt) =>
       opt
         .setName("username")
@@ -23,10 +23,20 @@ export const command: Command = {
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true),
     )
+    .addStringOption((opt) =>
+      opt
+        .setName("message")
+        .setDescription(
+          "Custom text. Use {streamer} & {game}. Leave blank for @everyone default.",
+        )
+        .setRequired(false),
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
   async execute(interaction) {
     const username = interaction.options.getString("username")!.toLowerCase();
     const channel = interaction.options.getChannel("channel")!;
+    const message = interaction.options.getString("message");
     const guildId = interaction.guildId;
 
     if (!guildId) {
@@ -37,9 +47,10 @@ export const command: Command = {
       return;
     }
 
-    addSubscription(guildId, channel.id, username);
+    addSubscription(guildId, channel.id, username, message);
+
     await interaction.reply(
-      `Now monitoring **${username}**. Notifications will be sent to <#${channel.id}>.`,
+      `✅ Now monitoring **${username}** in <#${channel.id}>.\nMessage: \`${message || "Default with @everyone"}\``,
     );
   },
 };
