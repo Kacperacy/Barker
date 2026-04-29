@@ -5,9 +5,11 @@ import {
 } from "discord.js";
 import type { Command } from "../types";
 import {
-  getGuildSubscriptions,
   removeSubscription,
+  getGuildSubscriptions,
+  getSubscriptionsForStreamer,
 } from "../database/repositories/subscriptions";
+import { unsubscribeFromStreamerEvents } from "../twitch/api";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
@@ -53,6 +55,13 @@ export const command: Command = {
     }
 
     removeSubscription(guildId, username);
+
+    const remainingSubs = getSubscriptionsForStreamer(username);
+
+    if (remainingSubs.length === 0) {
+      await unsubscribeFromStreamerEvents(username);
+    }
+
     await interaction.reply(
       `Stopped monitoring **${username}** on this server.`,
     );

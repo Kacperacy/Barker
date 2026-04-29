@@ -68,3 +68,43 @@ export async function subscribeToEvent(
       `Failed to subscribe to ${eventType} for ${login}: ${await res.text()}`,
     );
 }
+
+export async function unsubscribeFromStreamerEvents(login: string) {
+  const broadcasterId = await getTwitchUserId(login);
+  if (!broadcasterId) return;
+
+  const token = await getValidUserToken();
+
+  const res = await fetch(
+    "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled",
+    {
+      headers: {
+        "Client-ID": env.TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!res.ok) return;
+  const data = (await res.json()) as any;
+
+  const subsToDelete = data.data.filter(
+    (sub: any) => sub.condition.broadcaster_user_id === broadcasterId,
+  );
+
+  for (const sub of subsToDelete) {
+    await fetch(
+      `https://api.twitch.tv/helix/eventsub/subscriptions?id=${sub.id}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Client-ID": env.TWITCH_CLIENT_ID,
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    logger.info(
+      `Unsubscribed from event ${sub.type} for ${login} in Twitch API`,
+    );
+  }
+}
