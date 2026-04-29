@@ -23,6 +23,24 @@ try {
   db.query("ALTER TABLE subscriptions ADD COLUMN custom_message TEXT").run();
 } catch (e) {}
 
+db.query(
+  `CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`,
+).run();
+
+export const setConfig = (key: string, value: string) => {
+  db.query("INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)").run(
+    key,
+    value,
+  );
+};
+
+export const getConfig = (key: string): string | null => {
+  const res = db.query("SELECT value FROM config WHERE key = ?1").get(key) as {
+    value: string;
+  } | null;
+  return res ? res.value : null;
+};
+
 export interface Subscription {
   guild_id: string;
   channel_id: string;

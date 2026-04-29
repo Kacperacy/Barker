@@ -1,74 +1,147 @@
 import { Client, TextChannel, EmbedBuilder } from "discord.js";
-import { getAllUniqueStreamers, getSubscriptionsForStreamer } from "./database";
+import {
+  getAllUniqueStreamers,
+  getSubscriptionsForStreamer,
+  setConfig,
+  getConfig,
+} from "./database";
 import { env } from "../config";
 import { logger } from "../utils/logger";
 
-const liveStreamers = new Set<string>();
-let twitchAccessToken = "";
+let ws: WebSocket | null = null;
+let sessionId: string = "";
 
-async function getTwitchToken() {
-  const params = new URLSearchParams({
-    client_id: env.TWITCH_CLIENT_ID,
-    client_secret: env.TWITCH_CLIENT_SECRET,
-    grant_type: "client_credentials",
-  });
+async function getValidUserToken(): Promise<string> {
+  let token = getConfig("twitch_user_token");
+
+  if (token) {
+    const check = await fetch("https://id.twitch.tv/oauth2/validate", {
+      headers: { Authorization: `OAuth ${token}` },
+    });
+    if (check.ok) return token;
+  }
+
+  logger.info("Twitch User Token expired. Refreshing...");
+  const refreshToken =
+    getConfig("twitch_refresh_token") || env.TWITCH_REFRESH_TOKEN;
+
   const res = await fetch("https://id.twitch.tv/oauth2/token", {
     method: "POST",
-    body: params,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.TWITCH_CLIENT_ID,
+      client_secret: env.TWITCH_CLIENT_SECRET,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
   });
-  const data = (await res.json()) as any;
-  return data.access_token;
-}
-
-async function getStreamsData(streamers: string[]) {
-  if (streamers.length === 0) return [];
-
-  const queryParams = streamers
-    .map((s) => `user_login=${encodeURIComponent(s)}`)
-    .join("&");
-
-  const res = await fetch(
-    `https://api.twitch.tv/helix/streams?${queryParams}`,
-    {
-      headers: {
-        "Client-ID": env.TWITCH_CLIENT_ID,
-        Authorization: `Bearer ${twitchAccessToken}`,
-      },
-    },
-  );
 
   if (!res.ok) {
-    if (res.status === 401) twitchAccessToken = await getTwitchToken(); // Refresh token if expired
-    return [];
+    logger.error(
+      "CRITICAL: Failed to refresh Twitch token. You need a new TWITCH_REFRESH_TOKEN in .env!",
+    );
+    throw new Error("Token refresh failed");
   }
 
   const data = (await res.json()) as any;
-  return data.data || [];
+  setConfig("twitch_user_token", data.access_token);
+  setConfig("twitch_refresh_token", data.refresh_token);
+
+  return data.access_token;
+}
+
+export async function getTwitchUserId(login: string): Promise<string | null> {
+  const token = await getValidUserToken();
+  const res = await fetch(
+    `https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`,
+    {
+      headers: {
+        "Client-ID": env.TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  const data = (await res.json()) as any;
+  return data.data && data.data.length > 0 ? data.data[0].id : null;
+}
+
+export async function subscribeToStreamer(login: string) {
+  if (!sessionId) return;
+  const broadcasterId = await getTwitchUserId(login);
+  if (!broadcasterId) return logger.error(`Cannot find Twitch ID for ${login}`);
+
+  const token = await getValidUserToken();
+  const res = await fetch(
+    "https://api.twitch.tv/helix/eventsub/subscriptions",
+    {
+      method: "POST",
+      headers: {
+        "Client-ID": env.TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "stream.online",
+        version: "1",
+        condition: { broadcaster_user_id: broadcasterId },
+        transport: { method: "websocket", session_id: sessionId },
+      }),
+    },
+  );
+
+  if (res.ok) logger.info(`Subscribed to EventSub for ${login}`);
+  else logger.error(`Failed to subscribe to ${login}: ${await res.text()}`);
+}
+
+async function getStreamData(login: string) {
+  const token = await getValidUserToken();
+  const res = await fetch(
+    `https://api.twitch.tv/helix/streams?user_login=${login}`,
+    {
+      headers: {
+        "Client-ID": env.TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  const data = (await res.json()) as any;
+  return data.data && data.data.length > 0 ? data.data[0] : null;
 }
 
 export async function startTwitchMonitor(client: Client) {
-  twitchAccessToken = await getTwitchToken();
-  logger.info("Connected to Twitch API");
+  await getValidUserToken();
 
-  const checkTwitchStreams = async () => {
-    try {
-      const streamersToCheck = getAllUniqueStreamers();
-      if (streamersToCheck.length === 0) return;
+  ws = new WebSocket("wss://eventsub.wss.twitch.tv/ws");
+  ws.onopen = () =>
+    logger.info("📡 Connecting to Twitch EventSub WebSocket...");
 
-      const streams = await getStreamsData(streamersToCheck);
+  ws.onmessage = async (event) => {
+    const msg = JSON.parse(event.data.toString());
+    const messageType = msg.metadata.message_type;
 
-      const currentLiveLogins = new Set(
-        streams.map((s: any) => s.user_login.toLowerCase()),
-      );
+    if (messageType === "session_welcome") {
+      sessionId = msg.payload.session.id;
+      logger.info(`WebSocket Session established! ID: ${sessionId}`);
 
-      for (const stream of streams) {
-        const login = stream.user_login.toLowerCase();
+      const streamers = getAllUniqueStreamers();
+      for (const login of streamers) {
+        await subscribeToStreamer(login);
+      }
+    }
 
-        if (!liveStreamers.has(login)) {
-          liveStreamers.add(login);
+    if (messageType === "notification") {
+      const eventType = msg.metadata.subscription_type;
+      const eventData = msg.payload.event;
+
+      if (eventType === "stream.online") {
+        const login = eventData.broadcaster_user_login.toLowerCase();
+        logger.info(`EVENT TRIGGERED: ${login} went live!`);
+
+        setTimeout(async () => {
+          const stream = await getStreamData(login);
+          if (!stream) return;
 
           const subs = getSubscriptionsForStreamer(login);
-
           const embed = new EmbedBuilder()
             .setColor(0x9146ff)
             .setTitle(stream.title)
@@ -104,47 +177,34 @@ export async function startTwitchMonitor(client: Client) {
               )) as TextChannel;
               if (channel) {
                 let textContent = `@everyone 🚀 Hey! **${stream.user_name}** just went live!`;
-
                 if (sub.custom_message) {
                   textContent = sub.custom_message
                     .replace(/{streamer}/gi, stream.user_name)
                     .replace(/{game}/gi, stream.game_name || "something");
                 }
-
-                await channel.send({
-                  content: textContent,
-                  embeds: [embed],
-                });
+                await channel.send({ content: textContent, embeds: [embed] });
               }
             } catch (err) {
               logger.error(
                 `Could not send message to channel ${sub.channel_id}:`,
                 err,
               );
-            } finally {
-              logger.info(
-                `Checked Twitch streams. Currently live: ${[...liveStreamers].join(", ") || "None"}`,
-              );
             }
           }
-        }
+        }, 5000);
       }
+    }
 
-      for (const login of liveStreamers) {
-        if (!currentLiveLogins.has(login)) {
-          liveStreamers.delete(login);
-        }
-      }
-    } catch (e) {
-      logger.error("Twitch monitor error:", e);
-    } finally {
-      logger.info(
-        `Checked Twitch streams. Currently live: ${[...liveStreamers].join(", ") || "None"}`,
-      );
+    if (messageType === "session_reconnect") {
+      logger.info("Twitch requested WebSocket reconnect. Adjusting...");
+      ws?.close();
     }
   };
 
-  await checkTwitchStreams();
-
-  setInterval(checkTwitchStreams, 30 * 1000);
+  ws.onerror = (error) => logger.error("WebSocket Error:", error);
+  ws.onclose = () => {
+    logger.info("WebSocket Closed. Attempting to reconnect in 5 seconds...");
+    sessionId = "";
+    setTimeout(() => startTwitchMonitor(client), 5000);
+  };
 }

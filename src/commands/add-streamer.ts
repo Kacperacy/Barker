@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import type { Command } from "../types";
 import { addSubscription } from "../services/database";
+import { subscribeToStreamer } from "../services/twitch";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
@@ -48,6 +49,8 @@ export const command: Command = {
     }
 
     addSubscription(guildId, channel.id, username, message);
+
+    subscribeToStreamer(username);
 
     await interaction.reply(
       `✅ Now monitoring **${username}** in <#${channel.id}>.\nMessage: \`${message || "Default with @everyone"}\``,
