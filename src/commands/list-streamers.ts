@@ -4,7 +4,7 @@ import {
   EmbedBuilder,
 } from "discord.js";
 import type { Command } from "../types";
-import { getGuildSubscriptions } from "../services/database";
+import { getGuildSubscriptions } from "../database/repositories/subscriptions";
 
 export const command: Command = {
   data: new SlashCommandBuilder()

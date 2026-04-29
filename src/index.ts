@@ -1,12 +1,13 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { readdirSync } from "fs";
 import type { Command } from "./types";
-import { deployCommands } from "./services/deploy-commands";
+import { deployCommands } from "./utils/deploy-commands";
 import readyEvent from "./events/ready";
 import interactionEvent from "./events/interactionCreate";
 import { env } from "./config";
-import { closeDatabase } from "./services/database";
+import { closeDatabase } from "./database/connection";
 import { logger } from "./utils/logger";
+import { runMigrations } from "./database/migrations";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -14,6 +15,9 @@ const client = new Client({
 
 const commands = new Map<string, Command>();
 const commandsList: Command[] = [];
+
+// Run database migrations
+runMigrations();
 
 // Commands
 const commandFiles = readdirSync("./src/commands").filter((f) =>

@@ -4,8 +4,8 @@ import {
   ChannelType,
 } from "discord.js";
 import type { Command } from "../types";
-import { addSubscription } from "../services/database";
-import { subscribeToStreamer } from "../services/twitch";
+import { addSubscription } from "../database/repositories/subscriptions";
+import { subscribeToStreamer } from "../twitch/eventsub";
 
 export const command: Command = {
   data: new SlashCommandBuilder()

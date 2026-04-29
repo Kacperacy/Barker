@@ -5,9 +5,9 @@ import {
 } from "discord.js";
 import type { Command } from "../types";
 import {
-  removeSubscription,
   getGuildSubscriptions,
-} from "../services/database";
+  removeSubscription,
+} from "../database/repositories/subscriptions";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
