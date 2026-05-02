@@ -131,15 +131,27 @@ export async function getStreamsByCategory(
   language: string,
 ) {
   const token = await getValidUserToken();
-  const res = await fetch(
-    `https://api.twitch.tv/helix/streams?game_id=${categoryId}&language=${language}&first=100`,
-    {
+  let allStreams: any[] = [];
+  let cursor: string | null = null;
+  const baseUrl = `https://api.twitch.tv/helix/streams?game_id=${categoryId}&language=${language}&first=100`;
+
+  do {
+    const fetchUrl = cursor ? `${baseUrl}&after=${cursor}` : baseUrl;
+    const res = await fetch(fetchUrl, {
       headers: {
         "Client-ID": env.TWITCH_CLIENT_ID,
         Authorization: `Bearer ${token}`,
       },
-    },
-  );
-  const data = (await res.json()) as any;
-  return data.data ? data.data : [];
+    });
+    const data = (await res.json()) as any;
+
+    if (data.data) {
+      allStreams = allStreams.concat(data.data);
+    }
+
+    cursor =
+      data.pagination && data.pagination.cursor ? data.pagination.cursor : null;
+  } while (cursor);
+
+  return allStreams;
 }

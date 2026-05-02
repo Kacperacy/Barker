@@ -13,7 +13,7 @@ import { hasIndividualSubscription } from "../database/repositories/subscription
 import { isStreamerBlacklisted } from "../database/repositories/blacklist";
 
 const missingStrikes = new Map<string, number>();
-const MAX_STRIKES = 3;
+const MAX_STRIKES = 10;
 let isPolling = false;
 
 export function startCategoryPolling(client: Client) {
