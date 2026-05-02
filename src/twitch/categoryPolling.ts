@@ -26,6 +26,10 @@ export function startCategoryPolling(client: Client) {
 
         for (const stream of streams) {
           if (!isUserNotified(stream.user_id, filter.category_id)) {
+            logger.info(
+              `[Category Polling] NEW STREAM DETECTED: ${stream.user_login} in category ${filter.category_id}`,
+            );
+
             const subs = getGuildsForCategoryFilter(
               filter.category_id,
               filter.language,
@@ -63,10 +67,16 @@ export function startCategoryPolling(client: Client) {
               const streamerLogin = stream.user_login.toLowerCase();
 
               if (hasIndividualSubscription(sub.guild_id, streamerLogin)) {
+                logger.info(
+                  `[Category Polling] Skipping ${streamerLogin} for guild ${sub.guild_id} (Individual sub exists)`,
+                );
                 continue;
               }
 
               if (isStreamerBlacklisted(sub.guild_id, streamerLogin)) {
+                logger.info(
+                  `[Category Polling] Skipping ${streamerLogin} for guild ${sub.guild_id} (Blacklisted)`,
+                );
                 continue;
               }
 
@@ -83,6 +93,9 @@ export function startCategoryPolling(client: Client) {
                   }
 
                   await channel.send({ content: textContent, embeds: [embed] });
+                  logger.info(
+                    `[Category Polling] Notification sent for ${streamerLogin} to channel ${sub.channel_id}`,
+                  );
                 }
               } catch (err) {
                 logger.error(
@@ -93,6 +106,9 @@ export function startCategoryPolling(client: Client) {
             }
 
             addNotifiedUser(stream.user_id, filter.category_id);
+            logger.info(
+              `[Category Polling] Added ${stream.user_login} (${stream.user_id}) to notified list for category ${filter.category_id}`,
+            );
           }
         }
 
@@ -102,6 +118,9 @@ export function startCategoryPolling(client: Client) {
         for (const user of previouslyNotified) {
           if (!liveUserIds.has(user.user_id)) {
             removeNotifiedUser(user.user_id, filter.category_id);
+            logger.info(
+              `[Category Polling] REMOVED STREAM DETECTED: User ID ${user.user_id} is no longer live in category ${filter.category_id}. Removed from notified list.`,
+            );
           }
         }
       }
