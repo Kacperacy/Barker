@@ -54,3 +54,15 @@ export const getGuildSubscriptions = (guildId: string): Subscription[] => {
     .query("SELECT * FROM subscriptions WHERE guild_id = ?1")
     .all(guildId) as Subscription[];
 };
+
+export const hasIndividualSubscription = (
+  guildId: string,
+  streamerName: string,
+): boolean => {
+  const res = db
+    .query(
+      "SELECT 1 FROM subscriptions WHERE guild_id = ?1 AND streamer_name = ?2",
+    )
+    .get(guildId, streamerName.toLowerCase());
+  return !!res;
+};

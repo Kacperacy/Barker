@@ -9,6 +9,8 @@ import {
   getNotifiedUsersForCategory,
   removeNotifiedUser,
 } from "../database/repositories/categorySubscriptions";
+import { hasIndividualSubscription } from "../database/repositories/subscriptions";
+import { isStreamerBlacklisted } from "../database/repositories/blacklist";
 
 export function startCategoryPolling(client: Client) {
   setInterval(async () => {
@@ -58,6 +60,16 @@ export function startCategoryPolling(client: Client) {
               .setTimestamp();
 
             for (const sub of subs) {
+              const streamerLogin = stream.user_login.toLowerCase();
+
+              if (hasIndividualSubscription(sub.guild_id, streamerLogin)) {
+                continue;
+              }
+
+              if (isStreamerBlacklisted(sub.guild_id, streamerLogin)) {
+                continue;
+              }
+
               try {
                 const channel = (await client.channels.fetch(
                   sub.channel_id,

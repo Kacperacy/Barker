@@ -43,4 +43,12 @@ export function runMigrations() {
       PRIMARY KEY (user_id, category_id)
     )`,
   ).run();
+
+  db.query(
+    `CREATE TABLE IF NOT EXISTS blacklisted_streamers (
+      guild_id TEXT,
+      streamer_name TEXT,
+      PRIMARY KEY (guild_id, streamer_name)
+    )`,
+  ).run();
 }
