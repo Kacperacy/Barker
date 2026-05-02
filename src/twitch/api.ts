@@ -108,3 +108,38 @@ export async function unsubscribeFromStreamerEvents(login: string) {
     );
   }
 }
+
+export async function getTwitchCategoryId(
+  name: string,
+): Promise<string | null> {
+  const token = await getValidUserToken();
+  const res = await fetch(
+    `https://api.twitch.tv/helix/games?name=${encodeURIComponent(name)}`,
+    {
+      headers: {
+        "Client-ID": env.TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  const data = (await res.json()) as any;
+  return data.data && data.data.length > 0 ? data.data[0].id : null;
+}
+
+export async function getStreamsByCategory(
+  categoryId: string,
+  language: string,
+) {
+  const token = await getValidUserToken();
+  const res = await fetch(
+    `https://api.twitch.tv/helix/streams?game_id=${categoryId}&language=${language}&first=100`,
+    {
+      headers: {
+        "Client-ID": env.TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  const data = (await res.json()) as any;
+  return data.data ? data.data : [];
+}

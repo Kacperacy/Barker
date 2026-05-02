@@ -2,6 +2,7 @@ import { Client, Events } from "discord.js";
 import { logger } from "../utils/logger";
 import { startEventSub } from "../twitch/eventsub";
 import { setupTwitchHandlers } from "../twitch/handlers";
+import { startCategoryPolling } from "../twitch/categoryPolling";
 
 export default (client: Client) => {
   client.once(Events.ClientReady, (readyClient) => {
@@ -10,5 +11,7 @@ export default (client: Client) => {
     setupTwitchHandlers(client);
 
     startEventSub();
+
+    startCategoryPolling(client);
   });
 };
