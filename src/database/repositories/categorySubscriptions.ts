@@ -43,6 +43,35 @@ export const getGuildsForCategoryFilter = (
     .all(categoryId, language) as CategorySubscription[];
 };
 
+export const getGuildCategorySubscriptions = (
+  guildId: string,
+): CategorySubscription[] => {
+  return db
+    .query("SELECT * FROM category_subscriptions WHERE guild_id = ?1")
+    .all(guildId) as CategorySubscription[];
+};
+
+export const removeCategorySubscription = (
+  guildId: string,
+  categoryName: string,
+  language: string,
+) => {
+  db.query(
+    "DELETE FROM category_subscriptions WHERE guild_id = ?1 AND category_name = ?2 AND language = ?3",
+  ).run(guildId, categoryName, language);
+};
+
+export const updateCategorySubscriptionMessage = (
+  guildId: string,
+  categoryName: string,
+  language: string,
+  customMessage: string | null,
+) => {
+  db.query(
+    "UPDATE category_subscriptions SET custom_message = ?1 WHERE guild_id = ?2 AND category_name = ?3 AND language = ?4",
+  ).run(customMessage, guildId, categoryName, language);
+};
+
 export const addNotifiedUser = (userId: string, categoryId: string) => {
   db.query(
     `INSERT OR IGNORE INTO category_notified (user_id, category_id) VALUES (?1, ?2)`,
