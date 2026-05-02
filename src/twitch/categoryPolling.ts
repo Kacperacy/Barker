@@ -12,8 +12,15 @@ import {
 import { hasIndividualSubscription } from "../database/repositories/subscriptions";
 import { isStreamerBlacklisted } from "../database/repositories/blacklist";
 
+const missingStrikes = new Map<string, number>();
+const MAX_STRIKES = 3;
+let isPolling = false;
+
 export function startCategoryPolling(client: Client) {
   setInterval(async () => {
+    if (isPolling) return;
+    isPolling = true;
+
     try {
       const filters = getAllUniqueCategoryFilters();
 
@@ -25,6 +32,11 @@ export function startCategoryPolling(client: Client) {
         const liveUserIds = new Set(streams.map((s: any) => s.user_id));
 
         for (const stream of streams) {
+          const strikeKey = `${filter.category_id}_${stream.user_id}`;
+          if (missingStrikes.has(strikeKey)) {
+            missingStrikes.delete(strikeKey);
+          }
+
           if (!isUserNotified(stream.user_id, filter.category_id)) {
             logger.info(
               `[Category Polling] NEW STREAM DETECTED: ${stream.user_login} in category ${filter.category_id}`,
@@ -117,15 +129,28 @@ export function startCategoryPolling(client: Client) {
         );
         for (const user of previouslyNotified) {
           if (!liveUserIds.has(user.user_id)) {
-            removeNotifiedUser(user.user_id, filter.category_id);
-            logger.info(
-              `[Category Polling] REMOVED STREAM DETECTED: User ID ${user.user_id} is no longer live in category ${filter.category_id}. Removed from notified list.`,
-            );
+            const strikeKey = `${filter.category_id}_${user.user_id}`;
+            const currentStrikes = (missingStrikes.get(strikeKey) || 0) + 1;
+
+            if (currentStrikes >= MAX_STRIKES) {
+              removeNotifiedUser(user.user_id, filter.category_id);
+              missingStrikes.delete(strikeKey);
+              logger.info(
+                `[Category Polling] REMOVED STREAM DETECTED: User ID ${user.user_id} removed after ${MAX_STRIKES} missed polls in category ${filter.category_id}.`,
+              );
+            } else {
+              missingStrikes.set(strikeKey, currentStrikes);
+              logger.info(
+                `[Category Polling] Streamer ${user.user_id} missing from category ${filter.category_id}. Strike ${currentStrikes}/${MAX_STRIKES}.`,
+              );
+            }
           }
         }
       }
     } catch (error) {
       logger.error("Error during category polling:", error);
+    } finally {
+      isPolling = false;
     }
   }, 60000);
 }
