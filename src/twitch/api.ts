@@ -181,3 +181,33 @@ export async function getStreamsByCategory(
 
   return allStreams;
 }
+
+export async function cleanupZombieSubscriptions() {
+  const token = await getValidUserToken();
+  const res = await fetch(
+    "https://api.twitch.tv/helix/eventsub/subscriptions?status=websocket_disconnected",
+    {
+      headers: {
+        "Client-ID": env.TWITCH_CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!res.ok) return;
+  const data = (await res.json()) as any;
+
+  for (const sub of data.data) {
+    await fetch(
+      `https://api.twitch.tv/helix/eventsub/subscriptions?id=${sub.id}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Client-ID": env.TWITCH_CLIENT_ID,
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    logger.info(`Cleaned up zombie subscription: ${sub.id}`);
+  }
+}

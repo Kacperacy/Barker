@@ -1,51 +1,67 @@
 import { Client, GatewayIntentBits } from "discord.js";
-import { readdirSync } from "fs";
-import type { Command } from "./types";
-import { deployCommands } from "./utils/deploy-commands";
-import readyEvent from "./events/ready";
-import interactionEvent from "./events/interactionCreate";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { env } from "./config";
-import { closeDatabase } from "./database/connection";
-import { logger } from "./utils/logger";
+import ready from "./events/ready";
+import interactionCreate from "./events/interactionCreate";
 import { runMigrations } from "./database/migrations";
+import { logger } from "./utils/logger";
+import { db } from "./database/connection";
+import { closeEventSub } from "./twitch/eventsub";
+import type { Command } from "./types";
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("CRITICAL: Unhandled Rejection at:", promise, "reason:", reason);
 });
 
-const commands = new Map<string, Command>();
-const commandsList: Command[] = [];
+process.on("uncaughtException", (error) => {
+  logger.error("CRITICAL: Uncaught Exception:", error);
+});
 
-// Run database migrations
 runMigrations();
 
-// Commands
-const commandFiles = readdirSync("./src/commands").filter((f) =>
-  f.endsWith(".ts"),
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+const commands = new Map<string, Command>();
+const commandsPath = join(__dirname, "commands");
+const commandFiles = readdirSync(commandsPath).filter(
+  (file) => file.endsWith(".ts") || file.endsWith(".js"),
 );
+
 for (const file of commandFiles) {
-  const { command } = require(`./commands/${file}`);
-  commands.set(command.data.name, command);
-  commandsList.push(command);
+  const filePath = join(commandsPath, file);
+  const module = await import(filePath);
+  if (module.command && module.command.data) {
+    commands.set(module.command.data.name, module.command);
+  }
 }
 
-// Events
-readyEvent(client);
-interactionEvent(client, commands);
+ready(client);
+interactionCreate(client, commands);
 
-// Command deployment and bot login
-(async () => {
-  await deployCommands(commandsList);
-  client.login(env.DISCORD_TOKEN);
-})();
+client.login(env.DISCORD_TOKEN);
 
-// Graceful shutdown
-const shutdown = () => {
-  logger.info("🛑 Shutting down gracefully...");
-  client.destroy();
-  closeDatabase();
-  process.exit(0);
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`Received ${signal}. Starting graceful shutdown...`);
+
+  try {
+    closeEventSub();
+
+    if (client.isReady()) {
+      logger.info("Destroying Discord client...");
+      await client.destroy();
+    }
+
+    logger.info("Closing database connection...");
+    db.close();
+
+    logger.info("Shutdown complete. Exiting process.");
+    process.exit(0);
+  } catch (error) {
+    logger.error("Error occurred during graceful shutdown:", error);
+    process.exit(1);
+  }
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
