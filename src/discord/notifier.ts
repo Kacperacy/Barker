@@ -1,5 +1,6 @@
 import { Client, TextChannel, EmbedBuilder } from "discord.js";
 import { logger } from "../utils/logger";
+import { queueDiscordAction } from "../utils/queue";
 
 export function buildLiveEmbed(stream: any): EmbedBuilder {
   return new EmbedBuilder()
@@ -59,27 +60,29 @@ export async function sendStreamNotification(
   customMessage: string | null | undefined,
   defaultTemplate: string,
 ): Promise<string | null> {
-  try {
-    const channel = (await client.channels.fetch(channelId)) as TextChannel;
-    if (!channel) return null;
+  return queueDiscordAction(channelId, async () => {
+    try {
+      const channel = (await client.channels.fetch(channelId)) as TextChannel;
+      if (!channel) return null;
 
-    const templateToUse = customMessage || defaultTemplate;
-    const textContent = formatNotificationText(
-      templateToUse,
-      stream.user_name,
-      stream.game_name,
-    );
-    const embed = buildLiveEmbed(stream);
+      const templateToUse = customMessage || defaultTemplate;
+      const textContent = formatNotificationText(
+        templateToUse,
+        stream.user_name,
+        stream.game_name,
+      );
+      const embed = buildLiveEmbed(stream);
 
-    const sentMessage = await channel.send({
-      content: textContent,
-      embeds: [embed],
-    });
-    return sentMessage.id;
-  } catch (err) {
-    logger.error(`Could not send message to channel ${channelId}:`, err);
-    return null;
-  }
+      const sentMessage = await channel.send({
+        content: textContent,
+        embeds: [embed],
+      });
+      return sentMessage.id;
+    } catch (err) {
+      logger.error(`Could not send message to channel ${channelId}:`, err);
+      return null;
+    }
+  });
 }
 
 export async function editMessageToOffline(
@@ -89,23 +92,25 @@ export async function editMessageToOffline(
   broadcasterName: string,
   login: string,
 ): Promise<void> {
-  try {
-    const channel = (await client.channels.fetch(channelId)) as TextChannel;
-    if (!channel) return;
+  await queueDiscordAction(channelId, async () => {
+    try {
+      const channel = (await client.channels.fetch(channelId)) as TextChannel;
+      if (!channel) return;
 
-    const messageToEdit = await channel.messages.fetch(messageId);
-    if (!messageToEdit) return;
+      const messageToEdit = await channel.messages.fetch(messageId);
+      if (!messageToEdit) return;
 
-    const embedOffline = buildOfflineEmbed(broadcasterName, login);
+      const embedOffline = buildOfflineEmbed(broadcasterName, login);
 
-    await messageToEdit.edit({
-      content: `~~${broadcasterName}~~ (Offline)`,
-      embeds: [embedOffline],
-    });
-  } catch (err) {
-    logger.error(
-      `Could not edit offline message in channel ${channelId}:`,
-      err,
-    );
-  }
+      await messageToEdit.edit({
+        content: `~~${broadcasterName}~~ (Offline)`,
+        embeds: [embedOffline],
+      });
+    } catch (err) {
+      logger.error(
+        `Could not edit offline message in channel ${channelId}:`,
+        err,
+      );
+    }
+  });
 }

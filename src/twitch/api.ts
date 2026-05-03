@@ -1,11 +1,20 @@
 import { env } from "../config";
 import { logger } from "../utils/logger";
 import { getValidUserToken } from "./auth";
+import { MemoryCache } from "../utils/cache";
+
+const userIdCache = new MemoryCache<string>(24 * 60 * 60 * 1000);
+const categoryIdCache = new MemoryCache<string>(24 * 60 * 60 * 1000);
 
 export async function getTwitchUserId(login: string): Promise<string | null> {
+  const normalizedLogin = login.toLowerCase();
+
+  const cachedId = userIdCache.get(normalizedLogin);
+  if (cachedId) return cachedId;
+
   const token = await getValidUserToken();
   const res = await fetch(
-    `https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`,
+    `https://api.twitch.tv/helix/users?login=${encodeURIComponent(normalizedLogin)}`,
     {
       headers: {
         "Client-ID": env.TWITCH_CLIENT_ID,
@@ -14,7 +23,13 @@ export async function getTwitchUserId(login: string): Promise<string | null> {
     },
   );
   const data = (await res.json()) as any;
-  return data.data && data.data.length > 0 ? data.data[0].id : null;
+  const id = data.data && data.data.length > 0 ? data.data[0].id : null;
+
+  if (id) {
+    userIdCache.set(normalizedLogin, id);
+  }
+
+  return id;
 }
 
 export async function getStreamData(login: string) {
@@ -112,6 +127,11 @@ export async function unsubscribeFromStreamerEvents(login: string) {
 export async function getTwitchCategoryId(
   name: string,
 ): Promise<string | null> {
+  const normalizedName = name.toLowerCase();
+
+  const cachedId = categoryIdCache.get(normalizedName);
+  if (cachedId) return cachedId;
+
   const token = await getValidUserToken();
   const res = await fetch(
     `https://api.twitch.tv/helix/games?name=${encodeURIComponent(name)}`,
@@ -123,7 +143,13 @@ export async function getTwitchCategoryId(
     },
   );
   const data = (await res.json()) as any;
-  return data.data && data.data.length > 0 ? data.data[0].id : null;
+  const id = data.data && data.data.length > 0 ? data.data[0].id : null;
+
+  if (id) {
+    categoryIdCache.set(normalizedName, id);
+  }
+
+  return id;
 }
 
 export async function getStreamsByCategory(
