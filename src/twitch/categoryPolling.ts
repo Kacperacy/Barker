@@ -1,4 +1,4 @@
-import { Client, TextChannel, EmbedBuilder } from "discord.js";
+import { Client } from "discord.js";
 import { logger } from "../utils/logger";
 import { getStreamsByCategory } from "./api";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../database/repositories/categorySubscriptions";
 import { hasIndividualSubscription } from "../database/repositories/subscriptions";
 import { isStreamerBlacklisted } from "../database/repositories/blacklist";
+import { sendStreamNotification } from "../discord/notifier";
 
 const missingStrikes = new Map<string, number>();
 const MAX_STRIKES = 10;
@@ -47,34 +48,6 @@ export function startCategoryPolling(client: Client) {
               filter.language,
             );
 
-            const embed = new EmbedBuilder()
-              .setColor(0x9146ff)
-              .setTitle(stream.title)
-              .setURL(`https://twitch.tv/${stream.user_login}`)
-              .setAuthor({
-                name: `${stream.user_name} is live in ${stream.game_name}!`,
-                iconURL:
-                  "https://cdn-icons-png.flaticon.com/512/5968/5968819.png",
-              })
-              .addFields(
-                {
-                  name: "Language",
-                  value: stream.language.toUpperCase(),
-                  inline: true,
-                },
-                {
-                  name: "Viewers",
-                  value: stream.viewer_count.toString(),
-                  inline: true,
-                },
-              )
-              .setImage(
-                stream.thumbnail_url
-                  .replace("{width}", "1280")
-                  .replace("{height}", "720"),
-              )
-              .setTimestamp();
-
             for (const sub of subs) {
               const streamerLogin = stream.user_login.toLowerCase();
 
@@ -92,27 +65,17 @@ export function startCategoryPolling(client: Client) {
                 continue;
               }
 
-              try {
-                const channel = (await client.channels.fetch(
-                  sub.channel_id,
-                )) as TextChannel;
-                if (channel) {
-                  let textContent = `@everyone A wild developer appeared! **${stream.user_name}** is live!`;
-                  if (sub.custom_message) {
-                    textContent = sub.custom_message
-                      .replace(/{streamer}/gi, stream.user_name)
-                      .replace(/{game}/gi, stream.game_name || "a category");
-                  }
+              const messageId = await sendStreamNotification(
+                client,
+                sub.channel_id,
+                stream,
+                sub.custom_message,
+                `@everyone A wild developer appeared! **{streamer}** is live in **{game}**!`,
+              );
 
-                  await channel.send({ content: textContent, embeds: [embed] });
-                  logger.info(
-                    `[Category Polling] Notification sent for ${streamerLogin} to channel ${sub.channel_id}`,
-                  );
-                }
-              } catch (err) {
-                logger.error(
-                  `Could not send category message to ${sub.channel_id}:`,
-                  err,
+              if (messageId) {
+                logger.info(
+                  `[Category Polling] Notification sent for ${streamerLogin} to channel ${sub.channel_id}`,
                 );
               }
             }

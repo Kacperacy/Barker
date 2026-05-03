@@ -1,4 +1,4 @@
-import { Client, TextChannel, EmbedBuilder } from "discord.js";
+import { Client } from "discord.js";
 import { logger } from "../utils/logger";
 import { twitchEvents } from "./eventsub";
 import { getStreamData } from "./api";
@@ -8,6 +8,10 @@ import {
   getActiveMessages,
   clearActiveMessages,
 } from "../database/repositories/activeMessages";
+import {
+  sendStreamNotification,
+  editMessageToOffline,
+} from "../discord/notifier";
 
 export function setupTwitchHandlers(client: Client) {
   twitchEvents.on("streamOnline", async (eventData) => {
@@ -21,57 +25,17 @@ export function setupTwitchHandlers(client: Client) {
       const subs = getSubscriptionsForStreamer(login);
       if (subs.length === 0) return;
 
-      const embed = new EmbedBuilder()
-        .setColor(0x9146ff)
-        .setTitle(stream.title)
-        .setURL(`https://twitch.tv/${login}`)
-        .setAuthor({
-          name: `${stream.user_name} is now live!`,
-          iconURL: "https://cdn-icons-png.flaticon.com/512/5968/5968819.png",
-        })
-        .addFields(
-          {
-            name: "Game",
-            value: stream.game_name || "No category",
-            inline: true,
-          },
-          {
-            name: "Viewers",
-            value: stream.viewer_count.toString(),
-            inline: true,
-          },
-        )
-        .setImage(
-          stream.thumbnail_url
-            .replace("{width}", "1280")
-            .replace("{height}", "720"),
-        )
-        .setTimestamp();
-
       for (const sub of subs) {
-        try {
-          const channel = (await client.channels.fetch(
-            sub.channel_id,
-          )) as TextChannel;
-          if (channel) {
-            let textContent = `@everyone Hey! **${stream.user_name}** just went live!`;
-            if (sub.custom_message) {
-              textContent = sub.custom_message
-                .replace(/{streamer}/gi, stream.user_name)
-                .replace(/{game}/gi, stream.game_name || "something");
-            }
+        const messageId = await sendStreamNotification(
+          client,
+          sub.channel_id,
+          stream,
+          sub.custom_message,
+          `@everyone Hey! **{streamer}** just went live!`,
+        );
 
-            const sentMessage = await channel.send({
-              content: textContent,
-              embeds: [embed],
-            });
-            saveActiveMessage(login, channel.id, sentMessage.id);
-          }
-        } catch (err) {
-          logger.error(
-            `Could not send message to channel ${sub.channel_id}:`,
-            err,
-          );
+        if (messageId) {
+          saveActiveMessage(login, sub.channel_id, messageId);
         }
       }
     }, 5000);
@@ -84,39 +48,14 @@ export function setupTwitchHandlers(client: Client) {
     const activeMessages = getActiveMessages(login);
     if (activeMessages.length === 0) return;
 
-    const embedOffline = new EmbedBuilder()
-      .setColor(0x808080)
-      .setAuthor({
-        name: `${eventData.broadcaster_user_name} was live`,
-        iconURL: "https://cdn-icons-png.flaticon.com/512/5968/5968819.png",
-      })
-      .setTitle("Stream has ended")
-      .setURL(`https://twitch.tv/${login}`)
-      .setDescription("Catch them next time!")
-      .setTimestamp();
-
     for (const msgData of activeMessages) {
-      try {
-        const channel = (await client.channels.fetch(
-          msgData.channel_id,
-        )) as TextChannel;
-        if (channel) {
-          const messageToEdit = await channel.messages.fetch(
-            msgData.message_id,
-          );
-          if (messageToEdit) {
-            await messageToEdit.edit({
-              content: `~~${eventData.broadcaster_user_name}~~ (Offline)`,
-              embeds: [embedOffline],
-            });
-          }
-        }
-      } catch (err) {
-        logger.error(
-          `Could not edit offline message in channel ${msgData.channel_id}:`,
-          err,
-        );
-      }
+      await editMessageToOffline(
+        client,
+        msgData.channel_id,
+        msgData.message_id,
+        eventData.broadcaster_user_name,
+        login,
+      );
     }
 
     clearActiveMessages(login);
