@@ -8,6 +8,7 @@ import { runMigrations } from "./database/migrations";
 import { logger } from "./utils/logger";
 import { db } from "./database/connection";
 import { closeEventSub } from "./twitch/eventsub";
+import { deployCommands } from "./utils/deploy-commands";
 import type { Command } from "./types";
 
 process.on("unhandledRejection", (reason, promise) => {
@@ -35,6 +36,8 @@ for (const file of commandFiles) {
     commands.set(module.command.data.name, module.command);
   }
 }
+
+await deployCommands(commands);
 
 ready(client);
 interactionCreate(client, commands);

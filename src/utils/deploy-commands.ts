@@ -1,21 +1,27 @@
 import { REST, Routes } from "discord.js";
-import type { Command } from "../types";
 import { env } from "../config";
-import { logger } from "../utils/logger";
+import { logger } from "./logger";
+import type { Command } from "../types";
 
-export async function deployCommands(commands: Command[]) {
+export async function deployCommands(commandsMap: Map<string, Command>) {
+  const commands = Array.from(commandsMap.values()).map((cmd) =>
+    cmd.data.toJSON(),
+  );
   const rest = new REST({ version: "10" }).setToken(env.DISCORD_TOKEN);
-  const commandData = commands.map((c) => c.data.toJSON());
 
   try {
-    logger.info("Registering application (/) commands...");
-    await rest.put(Routes.applicationCommands(env.DISCORD_CLIENT_ID), {
-      body: commandData,
-    });
     logger.info(
-      `Successfully reloaded ${commandData.length} application (/) commands.`,
+      `Started refreshing ${commands.length} application (/) commands.`,
     );
-  } catch (e) {
-    logger.error(e);
+
+    await rest.put(Routes.applicationCommands(env.DISCORD_CLIENT_ID), {
+      body: commands,
+    });
+
+    logger.info(
+      `Successfully reloaded ${commands.length} application (/) commands.`,
+    );
+  } catch (error) {
+    logger.error("Failed to deploy commands:", error);
   }
 }
