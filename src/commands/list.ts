@@ -10,21 +10,12 @@ import { getGuildCategorySubscriptions } from "../database/repositories/category
 export const command: Command = {
   data: new SlashCommandBuilder()
     .setName("list")
-    .setDescription("View all monitored streamers or categories on this server")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((sub) =>
-      sub
-        .setName("streamers")
-        .setDescription("List all monitored Twitch streamers"),
+    .setDescription(
+      "View all monitored Twitch streamers and categories on this server",
     )
-    .addSubcommand((sub) =>
-      sub
-        .setName("categories")
-        .setDescription("List all monitored Twitch categories"),
-    ),
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    const subcommand = interaction.options.getSubcommand();
     const guildId = interaction.guildId;
 
     if (!guildId) {
@@ -35,54 +26,38 @@ export const command: Command = {
       return;
     }
 
-    if (subcommand === "streamers") {
-      const subs = getGuildSubscriptions(guildId);
-      if (subs.length === 0) {
-        await interaction.reply(
-          "This server is not monitoring any Twitch streamers yet.",
-        );
-        return;
-      }
+    const streamerSubs = getGuildSubscriptions(guildId);
+    const categorySubs = getGuildCategorySubscriptions(guildId);
 
-      const embed = new EmbedBuilder()
-        .setColor(0x9146ff)
-        .setTitle("Monitored Twitch Streamers")
-        .setDescription(
-          subs
-            .map(
-              (sub) =>
-                `**${sub.streamer_name}** -> <#${sub.channel_id}>\n*Message:* ${sub.custom_message || "Default"}`,
-            )
-            .join("\n\n"),
-        )
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [embed] });
+    if (streamerSubs.length === 0 && categorySubs.length === 0) {
+      await interaction.reply(
+        "This server is not monitoring any Twitch activity yet.",
+      );
+      return;
     }
 
-    if (subcommand === "categories") {
-      const subs = getGuildCategorySubscriptions(guildId);
-      if (subs.length === 0) {
-        await interaction.reply(
-          "This server is not monitoring any Twitch categories yet.",
-        );
-        return;
-      }
+    const embed = new EmbedBuilder()
+      .setColor(0x9146ff)
+      .setTitle("Monitored Twitch Activity")
+      .setTimestamp();
 
-      const embed = new EmbedBuilder()
-        .setColor(0x9146ff)
-        .setTitle("Monitored Twitch Categories")
-        .setDescription(
-          subs
-            .map(
-              (sub) =>
-                `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>\n*Message:* ${sub.custom_message || "Default"}`,
-            )
-            .join("\n\n"),
-        )
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [embed] });
+    if (streamerSubs.length > 0) {
+      const streamerText = streamerSubs
+        .map((sub) => `**${sub.streamer_name}** -> <#${sub.channel_id}>`)
+        .join("\n");
+      embed.addFields({ name: "👥 Streamers", value: streamerText });
     }
+
+    if (categorySubs.length > 0) {
+      const categoryText = categorySubs
+        .map(
+          (sub) =>
+            `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>`,
+        )
+        .join("\n");
+      embed.addFields({ name: "🎮 Categories", value: categoryText });
+    }
+
+    await interaction.reply({ embeds: [embed] });
   },
 };
