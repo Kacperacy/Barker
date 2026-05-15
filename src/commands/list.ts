@@ -43,19 +43,40 @@ export const command: Command = {
 
     if (streamerSubs.length > 0) {
       const streamerText = streamerSubs
-        .map((sub) => `**${sub.streamer_name}** -> <#${sub.channel_id}>`)
-        .join("\n");
-      embed.addFields({ name: "👥 Streamers", value: streamerText });
+        .map(
+          (sub) =>
+            `**${sub.streamer_name}** -> <#${sub.channel_id}>\n> 📝 Wiadomość: ${
+              sub.custom_message ? `\`${sub.custom_message}\`` : "*Domyślna*"
+            }`,
+        )
+        .join("\n\n");
+
+      embed.addFields({
+        name: "👥 Streamers",
+        value:
+          streamerText.length > 1024
+            ? streamerText.substring(0, 1021) + "..."
+            : streamerText,
+      });
     }
 
     if (categorySubs.length > 0) {
       const categoryText = categorySubs
         .map(
           (sub) =>
-            `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>`,
+            `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>\n> 📝 Wiadomość: ${
+              sub.custom_message ? `\`${sub.custom_message}\`` : "*Domyślna*"
+            }`,
         )
-        .join("\n");
-      embed.addFields({ name: "🎮 Categories", value: categoryText });
+        .join("\n\n");
+
+      embed.addFields({
+        name: "🎮 Categories",
+        value:
+          categoryText.length > 1024
+            ? categoryText.substring(0, 1021) + "..."
+            : categoryText,
+      });
     }
 
     await interaction.reply({ embeds: [embed] });
