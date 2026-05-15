@@ -43,6 +43,42 @@ export function buildOfflineEmbed(
     .setTimestamp();
 }
 
+export function buildLoLLiveEmbed(
+  matchData: any,
+  puuid: string,
+  riotId: string,
+): EmbedBuilder {
+  const participant = matchData.info.participants.find(
+    (p: any) => p.puuid === puuid,
+  );
+  const shouldMarkAsVictory = participant.win;
+  const embedColor = shouldMarkAsVictory ? 0x00ff00 : 0xff0000;
+  const resultTitle = shouldMarkAsVictory ? "Victory" : "Defeat";
+
+  return new EmbedBuilder()
+    .setColor(embedColor)
+    .setTitle(`${riotId} finished a ranked match!`)
+    .addFields(
+      { name: "Result", value: resultTitle, inline: true },
+      { name: "Champion", value: participant.championName, inline: true },
+      { name: "Role", value: participant.teamPosition, inline: true },
+      {
+        name: "KDA",
+        value: `${participant.kills}/${participant.deaths}/${participant.assists}`,
+        inline: true,
+      },
+      {
+        name: "Vision Score",
+        value: participant.visionScore.toString(),
+        inline: true,
+      },
+    )
+    .setThumbnail(
+      `https://ddragon.leagueoflegends.com/cdn/14.8.1/img/champion/${participant.championName}.png`,
+    )
+    .setTimestamp();
+}
+
 export function formatNotificationText(
   template: string,
   streamerName: string,

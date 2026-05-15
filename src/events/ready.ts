@@ -3,15 +3,15 @@ import { logger } from "../utils/logger";
 import { startEventSub } from "../twitch/eventsub";
 import { setupTwitchHandlers } from "../twitch/handlers";
 import { startCategoryPolling } from "../twitch/categoryPolling";
+import { startRiotPolling } from "../riot/polling";
 
 export default (client: Client) => {
   client.once(Events.ClientReady, (readyClient) => {
     logger.info(`Ready! Logged in as ${readyClient.user.tag}`);
 
     setupTwitchHandlers(client);
-
     startEventSub();
-
     startCategoryPolling(client);
+    startRiotPolling(client);
   });
 };

@@ -6,13 +6,15 @@ import {
 import type { Command } from "../types";
 import { addSubscription } from "../database/repositories/subscriptions";
 import { addCategorySubscription } from "../database/repositories/categorySubscriptions";
+import { addLoLSubscription } from "../database/repositories/lolSubscriptions";
 import { getTwitchCategoryId } from "../twitch/api";
 import { subscribeToStreamer } from "../twitch/eventsub";
+import { getPuuidByRiotId } from "../riot/api";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
     .setName("notify")
-    .setDescription("Manage Twitch notifications for this server")
+    .setDescription("Manage notifications for this server")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) =>
       sub
@@ -67,13 +69,30 @@ export const command: Command = {
             .setDescription("Custom message. Use {streamer} & {game}")
             .setRequired(false),
         ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("lol")
+        .setDescription("Track League of Legends player matches")
+        .addStringOption((opt) =>
+          opt
+            .setName("riotid")
+            .setDescription("Riot ID format (Name#Tag)")
+            .setRequired(true),
+        )
+        .addChannelOption((opt) =>
+          opt
+            .setName("channel")
+            .setDescription("Target channel")
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(true),
+        ),
     ),
 
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
     const guildId = interaction.guildId;
     const channel = interaction.options.getChannel("channel", true);
-    const message = interaction.options.getString("message");
 
     if (!guildId) {
       await interaction.reply({
@@ -87,6 +106,7 @@ export const command: Command = {
       const username = interaction.options
         .getString("username", true)
         .toLowerCase();
+      const message = interaction.options.getString("message");
 
       addSubscription(guildId, channel.id, username, message);
       await subscribeToStreamer(username);
@@ -103,6 +123,7 @@ export const command: Command = {
       const language = interaction.options
         .getString("language", true)
         .toLowerCase();
+      const message = interaction.options.getString("message");
       const categoryId = await getTwitchCategoryId(categoryName);
 
       if (!categoryId) {
@@ -123,6 +144,42 @@ export const command: Command = {
 
       await interaction.editReply(
         `✅ Now tracking category **${categoryName}** (${language}) in <#${channel.id}>.`,
+      );
+    }
+
+    if (subcommand === "lol") {
+      await interaction.deferReply();
+      const riotIdInput = interaction.options.getString("riotid", true);
+
+      if (!riotIdInput.includes("#")) {
+        await interaction.editReply(
+          "❌ Invalid Riot ID format. Please use Name#Tag format.",
+        );
+        return;
+      }
+
+      const [gameName, tagLine] = riotIdInput.split("#");
+
+      if (!gameName || !tagLine) {
+        await interaction.editReply(
+          "❌ Invalid Riot ID format. Please ensure there is text before and after the #.",
+        );
+        return;
+      }
+
+      const playerData = await getPuuidByRiotId(gameName, tagLine);
+
+      if (!playerData || !playerData.puuid) {
+        await interaction.editReply(
+          `❌ Could not find player **${riotIdInput}**.`,
+        );
+        return;
+      }
+
+      addLoLSubscription(guildId, channel.id, playerData.puuid, riotIdInput);
+
+      await interaction.editReply(
+        `✅ Now tracking League of Legends matches for **${riotIdInput}** in <#${channel.id}>.`,
       );
     }
   },

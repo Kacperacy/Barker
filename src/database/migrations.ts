@@ -51,4 +51,21 @@ export function runMigrations() {
       PRIMARY KEY (guild_id, streamer_name)
     )`,
   ).run();
+
+  db.query(
+    `CREATE TABLE IF NOT EXISTS lol_subscriptions (
+      guild_id TEXT,
+      channel_id TEXT,
+      puuid TEXT,
+      riot_id TEXT,
+      PRIMARY KEY (guild_id, puuid)
+    )`,
+  ).run();
+
+  db.query(
+    `CREATE TABLE IF NOT EXISTS lol_last_matches (
+      puuid TEXT PRIMARY KEY,
+      match_id TEXT
+    )`,
+  ).run();
 }
