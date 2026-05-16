@@ -1,4 +1,5 @@
 import { env } from "../config";
+import { logger } from "../utils/logger";
 
 const RIOT_HEADERS = {
   "X-Riot-Token": env.RIOT_API_KEY,
@@ -23,7 +24,12 @@ export async function getPuuidByRiotId(
     `https://${regional}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`,
     { headers: RIOT_HEADERS },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    logger.error(
+      `[Riot API] getPuuidByRiotId error: ${res.status} ${await res.text()}`,
+    );
+    return null;
+  }
   return (await res.json()) as {
     puuid: string;
     gameName: string;
@@ -39,7 +45,12 @@ export async function getLatestMatchId(
     `https://${regional}.api.riotgames.com/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=1`,
     { headers: RIOT_HEADERS },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    logger.error(
+      `[Riot API] getLatestMatchId error: ${res.status} ${await res.text()}`,
+    );
+    return null;
+  }
   const data = (await res.json()) as string[];
   return data[0] ?? null;
 }
@@ -52,7 +63,12 @@ export async function getMatchDetails(
     `https://${regional}.api.riotgames.com/lol/match/v5/matches/${matchId}`,
     { headers: RIOT_HEADERS },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    logger.error(
+      `[Riot API] getMatchDetails error: ${res.status} ${await res.text()}`,
+    );
+    return null;
+  }
   return (await res.json()) as any;
 }
 
@@ -64,7 +80,12 @@ export async function getSummonerData(
     `https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${puuid}`,
     { headers: RIOT_HEADERS },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    logger.error(
+      `[Riot API] getSummonerData error for PUUID ${puuid}: ${res.status} ${await res.text()}`,
+    );
+    return null;
+  }
   return (await res.json()) as { id: string };
 }
 
@@ -76,6 +97,11 @@ export async function getLeagueData(
     `https://${platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
     { headers: RIOT_HEADERS },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    logger.error(
+      `[Riot API] getLeagueData error for ID ${summonerId}: ${res.status} ${await res.text()}`,
+    );
+    return null;
+  }
   return (await res.json()) as any[];
 }

@@ -70,27 +70,31 @@ export function startRiotPolling(client: Client) {
             continue;
           }
 
+          // Fetching LP and Rank
           const summoner = await getSummonerData(
             player.puuid,
             regionData.platform,
           );
           let soloQ: any = null;
 
-          if (summoner && summoner.id) {
+          if (!summoner || !summoner.id) {
+            logger.warn(
+              `[Riot Polling] Could not find Summoner ID for ${player.riot_id}. Cannot fetch rank.`,
+            );
+          } else {
             const leagueEntries = await getLeagueData(
               summoner.id,
               regionData.platform,
             );
+
+            logger.info(
+              `[Riot Polling] League Entries raw data for ${player.riot_id}: ${JSON.stringify(leagueEntries)}`,
+            );
+
             if (leagueEntries && Array.isArray(leagueEntries)) {
               soloQ = leagueEntries.find(
                 (e: any) => e.queueType === "RANKED_SOLO_5x5",
               );
-
-              if (!soloQ) {
-                soloQ = leagueEntries.find(
-                  (e: any) => e.queueType === "RANKED_FLEX_SR",
-                );
-              }
             }
           }
 
@@ -117,6 +121,10 @@ export function startRiotPolling(client: Client) {
                 lpChangeText = " (Rank Changed!)";
               }
             }
+          } else {
+            logger.warn(
+              `[Riot Polling] soloQ is null for ${player.riot_id}, falling back to Unranked.`,
+            );
           }
 
           const subs = getSubscriptionsForLoLPlayer(player.puuid);
@@ -153,10 +161,6 @@ export function startRiotPolling(client: Client) {
             `[Riot Polling] Successfully processed and saved match ${latestMatchId} for ${player.riot_id}`,
           );
         }
-      }
-
-      if (uniquePlayers.length > 0) {
-        logger.info(`[Riot Polling] Finished checking.`);
       }
     } catch (error) {
       logger.error("[Riot Polling] Critical Error:", error);
