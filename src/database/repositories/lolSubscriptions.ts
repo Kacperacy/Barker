@@ -40,7 +40,9 @@ export const getAllUniqueLoLPlayers = (): {
   region: string;
 }[] => {
   return db
-    .query("SELECT DISTINCT puuid, riot_id, region FROM lol_subscriptions")
+    .query(
+      "SELECT puuid, MAX(riot_id) as riot_id, MAX(region) as region FROM lol_subscriptions GROUP BY puuid",
+    )
     .all() as { puuid: string; riot_id: string; region: string }[];
 };
 
