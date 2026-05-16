@@ -3,6 +3,10 @@ import { logger } from "../utils/logger";
 
 const RIOT_HEADERS = {
   "X-Riot-Token": env.RIOT_API_KEY,
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Charset": "application/x-www-form-urlencoded; charset=UTF-8",
 };
 
 export const REGIONS: Record<
@@ -71,34 +75,18 @@ export async function getMatchDetails(
   return (await res.json()) as any;
 }
 
-export async function getSummonerData(
+export async function getLeagueData(
   puuid: string,
   platform: string,
-): Promise<{ id: string } | null> {
-  const res = await fetch(
-    `https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(puuid)}`,
-    { headers: RIOT_HEADERS },
-  );
-  if (!res.ok) {
-    logger.error(
-      `[Riot API] getSummonerData error for PUUID ${puuid}: ${res.status} ${await res.text()}`,
-    );
-    return null;
-  }
-  return (await res.json()) as { id: string };
-}
-
-export async function getLeagueData(
-  summonerId: string,
-  platform: string,
 ): Promise<any[] | null> {
+  // UWAGA: Nowy autoryzowany endpoint wg dokumentacji, którą wkleiłeś:
   const res = await fetch(
-    `https://${platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/${encodeURIComponent(summonerId)}`,
+    `https://${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`,
     { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
     logger.error(
-      `[Riot API] getLeagueData error for ID ${summonerId}: ${res.status} ${await res.text()}`,
+      `[Riot API] getLeagueData error for PUUID ${puuid}: ${res.status} ${await res.text()}`,
     );
     return null;
   }

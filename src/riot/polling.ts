@@ -3,7 +3,6 @@ import {
   getLatestMatchId,
   getMatchDetails,
   REGIONS,
-  getSummonerData,
   getLeagueData,
 } from "./api";
 import { logger } from "../utils/logger";
@@ -60,35 +59,21 @@ export function startRiotPolling(client: Client) {
           );
           if (!matchData) continue;
 
-          const participant = matchData.info.participants.find(
-            (p: any) => p.puuid === player.puuid,
-          );
-
           const actualPlatform = matchData.info.platformId
             ? matchData.info.platformId.toLowerCase()
             : regionData.platform;
 
           let soloQ: any = null;
 
-          const summoner = await getSummonerData(player.puuid, actualPlatform);
+          const leagueEntries = await getLeagueData(
+            player.puuid,
+            actualPlatform,
+          );
 
-          const targetSummonerId = summoner?.id || participant?.summonerId;
-
-          if (!targetSummonerId) {
-            logger.warn(
-              `[Riot Polling] Could not find Summoner ID for ${player.riot_id}. Cannot fetch rank.`,
+          if (leagueEntries && Array.isArray(leagueEntries)) {
+            soloQ = leagueEntries.find(
+              (e: any) => e.queueType === "RANKED_SOLO_5x5",
             );
-          } else {
-            const leagueEntries = await getLeagueData(
-              targetSummonerId,
-              actualPlatform,
-            );
-
-            if (leagueEntries && Array.isArray(leagueEntries)) {
-              soloQ = leagueEntries.find(
-                (e: any) => e.queueType === "RANKED_SOLO_5x5",
-              );
-            }
           }
 
           let rankText = "";
