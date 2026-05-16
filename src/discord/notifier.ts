@@ -70,9 +70,11 @@ export function buildLoLLiveEmbed(
     (participant.neutralMinionsKilled || 0);
   const csPerMin = (farm / (durationSeconds / 60)).toFixed(1);
 
-  // OP.GG Link
   const [name = "", tag = ""] = riotId.split("#");
   const opggLink = `https://www.op.gg/summoners/${regionOpgg}/${encodeURIComponent(name)}-${encodeURIComponent(tag)}`;
+
+  const rawMatchId = matchData.metadata.matchId.split("_")[1];
+  const matchLink = `https://www.leagueofgraphs.com/match/${regionOpgg}/${rawMatchId}`;
 
   // Rank Display
   const currentRankDisplay = rankText
@@ -88,7 +90,7 @@ export function buildLoLLiveEmbed(
       url: opggLink,
     })
     .setTitle(`${resultTitle} with ${participant.championName}`)
-    .setURL(opggLink)
+    .setURL(matchLink)
     .addFields(
       { name: "Role", value: participant.teamPosition || "N/A", inline: true },
       {
@@ -167,6 +169,7 @@ export async function editMessageToOffline(
       if (!messageToEdit) return;
 
       const embedOffline = buildOfflineEmbed(broadcasterName, login);
+
       await messageToEdit.edit({
         content: `~~${broadcasterName}~~ (Offline)`,
         embeds: [embedOffline],
