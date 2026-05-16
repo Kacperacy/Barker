@@ -29,9 +29,20 @@ export function startRiotPolling(client: Client) {
     try {
       const uniquePlayers = getAllUniqueLoLPlayers();
 
+      if (uniquePlayers.length > 0) {
+        logger.info(
+          `[Riot Polling] Started checking for new matches for ${uniquePlayers.length} players...`,
+        );
+      }
+
       for (const player of uniquePlayers) {
         const regionData = REGIONS[player.region];
-        if (!regionData) continue;
+        if (!regionData) {
+          logger.error(
+            `[Riot Polling] Invalid region ${player.region} for player ${player.riot_id}`,
+          );
+          continue;
+        }
 
         const latestMatchId = await getLatestMatchId(
           player.puuid,
@@ -44,13 +55,21 @@ export function startRiotPolling(client: Client) {
           !lastKnownMatch || lastKnownMatch.match_id !== latestMatchId;
 
         if (shouldNotifyNewMatch) {
+          logger.info(
+            `[Riot Polling] New match detected for ${player.riot_id} (${latestMatchId}). Fetching details...`,
+          );
+
           const matchData = await getMatchDetails(
             latestMatchId,
             regionData.regional,
           );
-          if (!matchData) continue;
+          if (!matchData) {
+            logger.error(
+              `[Riot Polling] Failed to fetch match details for ${latestMatchId}`,
+            );
+            continue;
+          }
 
-          // Pobieranie LP i rangi
           const summoner = await getSummonerData(
             player.puuid,
             regionData.platform,
@@ -64,7 +83,7 @@ export function startRiotPolling(client: Client) {
             );
             if (leagueEntries) {
               soloQ = leagueEntries.find(
-                (e) => e.queueType === "RANKED_SOLO_5x5",
+                (e: any) => e.queueType === "RANKED_SOLO_5x5",
               );
             }
           }
@@ -111,6 +130,9 @@ export function startRiotPolling(client: Client) {
             )) as TextChannel;
             if (channel) {
               await channel.send({ embeds: [embed] });
+              logger.info(
+                `[Riot Polling] Notification sent for ${player.riot_id} to channel ${sub.channel_id}`,
+              );
             }
           }
 
@@ -121,15 +143,20 @@ export function startRiotPolling(client: Client) {
             soloQ ? soloQ.rank : null,
             soloQ ? soloQ.leaguePoints : null,
           );
+
           logger.info(
-            `Processed new match ${latestMatchId} for ${player.riot_id}`,
+            `[Riot Polling] Successfully processed and saved match ${latestMatchId} for ${player.riot_id}`,
           );
         }
       }
+
+      if (uniquePlayers.length > 0) {
+        logger.info(`[Riot Polling] Finished checking.`);
+      }
     } catch (error) {
-      logger.error("Riot polling error:", error);
+      logger.error("[Riot Polling] Critical Error:", error);
     } finally {
       shouldSkipPolling = false;
     }
-  }, 120000);
+  }, 120000); // Wykonywane co 120 sekund (2 minuty)
 }
