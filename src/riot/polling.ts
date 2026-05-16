@@ -3,6 +3,7 @@ import {
   getLatestMatchId,
   getMatchDetails,
   REGIONS,
+  getSummonerData,
   getLeagueData,
 } from "./api";
 import { logger } from "../utils/logger";
@@ -36,12 +37,7 @@ export function startRiotPolling(client: Client) {
 
       for (const player of uniquePlayers) {
         const regionData = REGIONS[player.region];
-        if (!regionData) {
-          logger.error(
-            `[Riot Polling] Invalid region ${player.region} for player ${player.riot_id}`,
-          );
-          continue;
-        }
+        if (!regionData) continue;
 
         const latestMatchId = await getLatestMatchId(
           player.puuid,
@@ -62,31 +58,30 @@ export function startRiotPolling(client: Client) {
             latestMatchId,
             regionData.regional,
           );
-          if (!matchData) {
-            logger.error(
-              `[Riot Polling] Failed to fetch match details for ${latestMatchId}`,
-            );
-            continue;
-          }
+          if (!matchData) continue;
 
           const participant = matchData.info.participants.find(
             (p: any) => p.puuid === player.puuid,
           );
 
+          const actualPlatform = matchData.info.platformId
+            ? matchData.info.platformId.toLowerCase()
+            : regionData.platform;
+
           let soloQ: any = null;
 
-          if (!participant || !participant.summonerId) {
+          const summoner = await getSummonerData(player.puuid, actualPlatform);
+
+          const targetSummonerId = summoner?.id || participant?.summonerId;
+
+          if (!targetSummonerId) {
             logger.warn(
-              `[Riot Polling] Could not find Summoner ID in match data for ${player.riot_id}. Cannot fetch rank.`,
+              `[Riot Polling] Could not find Summoner ID for ${player.riot_id}. Cannot fetch rank.`,
             );
           } else {
             const leagueEntries = await getLeagueData(
-              participant.summonerId,
-              regionData.platform,
-            );
-
-            logger.info(
-              `[Riot Polling] League Entries raw data for ${player.riot_id}: ${JSON.stringify(leagueEntries)}`,
+              targetSummonerId,
+              actualPlatform,
             );
 
             if (leagueEntries && Array.isArray(leagueEntries)) {
@@ -153,10 +148,6 @@ export function startRiotPolling(client: Client) {
             soloQ ? soloQ.tier : null,
             soloQ ? soloQ.rank : null,
             soloQ ? soloQ.leaguePoints : null,
-          );
-
-          logger.info(
-            `[Riot Polling] Successfully processed and saved match ${latestMatchId} for ${player.riot_id}`,
           );
         }
       }

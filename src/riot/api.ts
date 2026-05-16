@@ -5,7 +5,6 @@ const RIOT_HEADERS = {
   "X-Riot-Token": env.RIOT_API_KEY,
 };
 
-// Maps simple regions to Riot's routing logic
 export const REGIONS: Record<
   string,
   { platform: string; regional: string; opgg: string }
@@ -42,7 +41,7 @@ export async function getLatestMatchId(
   regional: string,
 ): Promise<string | null> {
   const res = await fetch(
-    `https://${regional}.api.riotgames.com/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=1`,
+    `https://${regional}.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=0&count=1`,
     { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
@@ -60,7 +59,7 @@ export async function getMatchDetails(
   regional: string,
 ): Promise<any | null> {
   const res = await fetch(
-    `https://${regional}.api.riotgames.com/lol/match/v5/matches/${matchId}`,
+    `https://${regional}.api.riotgames.com/lol/match/v5/matches/${encodeURIComponent(matchId)}`,
     { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
@@ -77,7 +76,7 @@ export async function getSummonerData(
   platform: string,
 ): Promise<{ id: string } | null> {
   const res = await fetch(
-    `https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${puuid}`,
+    `https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(puuid)}`,
     { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
@@ -94,7 +93,7 @@ export async function getLeagueData(
   platform: string,
 ): Promise<any[] | null> {
   const res = await fetch(
-    `https://${platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerId}`,
+    `https://${platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/${encodeURIComponent(summonerId)}`,
     { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
