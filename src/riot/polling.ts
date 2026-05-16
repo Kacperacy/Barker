@@ -76,15 +76,21 @@ export function startRiotPolling(client: Client) {
           );
           let soloQ: any = null;
 
-          if (summoner) {
+          if (summoner && summoner.id) {
             const leagueEntries = await getLeagueData(
               summoner.id,
               regionData.platform,
             );
-            if (leagueEntries) {
+            if (leagueEntries && Array.isArray(leagueEntries)) {
               soloQ = leagueEntries.find(
                 (e: any) => e.queueType === "RANKED_SOLO_5x5",
               );
+
+              if (!soloQ) {
+                soloQ = leagueEntries.find(
+                  (e: any) => e.queueType === "RANKED_FLEX_SR",
+                );
+              }
             }
           }
 
@@ -99,7 +105,6 @@ export function startRiotPolling(client: Client) {
               lastKnownMatch.tier &&
               matchData.info.queueId === 420
             ) {
-              // 420 = Solo/Duo Queue
               if (
                 lastKnownMatch.tier === soloQ.tier &&
                 lastKnownMatch.rank === soloQ.rank
@@ -158,5 +163,5 @@ export function startRiotPolling(client: Client) {
     } finally {
       shouldSkipPolling = false;
     }
-  }, 120000); // Wykonywane co 120 sekund (2 minuty)
+  }, 120000);
 }

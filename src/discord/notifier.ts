@@ -79,12 +79,12 @@ export function buildLoLLiveEmbed(
     ? `${rankText}${lpChangeText}`
     : "Unranked";
 
+  const championIconUrl = `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champion-icons/${participant.championId}.png`;
+
   return new EmbedBuilder()
     .setColor(embedColor)
     .setAuthor({
       name: `${riotId} finished a match!`,
-      iconURL:
-        "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/5074.jpg",
       url: opggLink,
     })
     .setTitle(`${resultTitle} with ${participant.championName}`)
@@ -105,9 +105,7 @@ export function buildLoLLiveEmbed(
       { name: "Duration", value: durationStr, inline: true },
       { name: "Current Rank", value: currentRankDisplay, inline: true },
     )
-    .setThumbnail(
-      `https://ddragon.leagueoflegends.com/cdn/14.8.1/img/champion/${participant.championName}.png`,
-    )
+    .setThumbnail(championIconUrl)
     .setTimestamp();
 }
 
