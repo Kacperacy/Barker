@@ -58,6 +58,7 @@ export function runMigrations() {
       channel_id TEXT,
       puuid TEXT,
       riot_id TEXT,
+      region TEXT,
       PRIMARY KEY (guild_id, puuid)
     )`,
   ).run();
@@ -65,7 +66,10 @@ export function runMigrations() {
   db.query(
     `CREATE TABLE IF NOT EXISTS lol_last_matches (
       puuid TEXT PRIMARY KEY,
-      match_id TEXT
+      match_id TEXT,
+      tier TEXT,
+      rank TEXT,
+      league_points INTEGER
     )`,
   ).run();
 }

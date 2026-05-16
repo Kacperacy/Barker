@@ -5,6 +5,7 @@ export interface LoLSubscription {
   channel_id: string;
   puuid: string;
   riot_id: string;
+  region: string;
 }
 
 export const addLoLSubscription = (
@@ -12,10 +13,11 @@ export const addLoLSubscription = (
   channelId: string,
   puuid: string,
   riotId: string,
+  region: string,
 ) => {
   db.query(
-    `INSERT OR REPLACE INTO lol_subscriptions (guild_id, channel_id, puuid, riot_id) VALUES (?1, ?2, ?3, ?4)`,
-  ).run(guildId, channelId, puuid, riotId);
+    `INSERT OR REPLACE INTO lol_subscriptions (guild_id, channel_id, puuid, riot_id, region) VALUES (?1, ?2, ?3, ?4, ?5)`,
+  ).run(guildId, channelId, puuid, riotId, region);
 };
 
 export const removeLoLSubscription = (guildId: string, puuid: string) => {
@@ -35,10 +37,11 @@ export const getGuildLoLSubscriptions = (
 export const getAllUniqueLoLPlayers = (): {
   puuid: string;
   riot_id: string;
+  region: string;
 }[] => {
   return db
-    .query("SELECT DISTINCT puuid, riot_id FROM lol_subscriptions")
-    .all() as { puuid: string; riot_id: string }[];
+    .query("SELECT DISTINCT puuid, riot_id, region FROM lol_subscriptions")
+    .all() as { puuid: string; riot_id: string; region: string }[];
 };
 
 export const getSubscriptionsForLoLPlayer = (
@@ -49,15 +52,30 @@ export const getSubscriptionsForLoLPlayer = (
     .all(puuid) as LoLSubscription[];
 };
 
-export const updateLastMatch = (puuid: string, matchId: string) => {
+export const updateLastMatch = (
+  puuid: string,
+  matchId: string,
+  tier: string | null,
+  rank: string | null,
+  lp: number | null,
+) => {
   db.query(
-    `INSERT OR REPLACE INTO lol_last_matches (puuid, match_id) VALUES (?1, ?2)`,
-  ).run(puuid, matchId);
+    `INSERT OR REPLACE INTO lol_last_matches (puuid, match_id, tier, rank, league_points) VALUES (?1, ?2, ?3, ?4, ?5)`,
+  ).run(puuid, matchId, tier, rank, lp);
 };
 
-export const getLastMatch = (puuid: string): string | null => {
+export const getLastMatch = (
+  puuid: string,
+): {
+  match_id: string;
+  tier: string;
+  rank: string;
+  league_points: number;
+} | null => {
   const res = db
-    .query("SELECT match_id FROM lol_last_matches WHERE puuid = ?1")
-    .get(puuid) as { match_id: string } | null;
-  return res ? res.match_id : null;
+    .query(
+      "SELECT match_id, tier, rank, league_points FROM lol_last_matches WHERE puuid = ?1",
+    )
+    .get(puuid) as any;
+  return res ? res : null;
 };

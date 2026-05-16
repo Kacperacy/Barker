@@ -47,6 +47,9 @@ export function buildLoLLiveEmbed(
   matchData: any,
   puuid: string,
   riotId: string,
+  regionOpgg: string,
+  rankText: string,
+  lpChangeText: string,
 ): EmbedBuilder {
   const participant = matchData.info.participants.find(
     (p: any) => p.puuid === puuid,
@@ -55,23 +58,52 @@ export function buildLoLLiveEmbed(
   const embedColor = shouldMarkAsVictory ? 0x00ff00 : 0xff0000;
   const resultTitle = shouldMarkAsVictory ? "Victory" : "Defeat";
 
+  // Duration
+  const durationSeconds = matchData.info.gameDuration;
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+  const durationStr = `${minutes}m ${seconds}s`;
+
+  // Farm
+  const farm =
+    (participant.totalMinionsKilled || 0) +
+    (participant.neutralMinionsKilled || 0);
+  const csPerMin = (farm / (durationSeconds / 60)).toFixed(1);
+
+  // OP.GG Link
+  const [name = "", tag = ""] = riotId.split("#");
+  const opggLink = `https://www.op.gg/summoners/${regionOpgg}/${encodeURIComponent(name)}-${encodeURIComponent(tag)}`;
+
+  // Rank Display
+  const currentRankDisplay = rankText
+    ? `${rankText}${lpChangeText}`
+    : "Unranked";
+
   return new EmbedBuilder()
     .setColor(embedColor)
-    .setTitle(`${riotId} finished a ranked match!`)
+    .setAuthor({
+      name: `${riotId} finished a match!`,
+      iconURL:
+        "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/5074.jpg",
+      url: opggLink,
+    })
+    .setTitle(`${resultTitle} with ${participant.championName}`)
+    .setURL(opggLink)
     .addFields(
-      { name: "Result", value: resultTitle, inline: true },
-      { name: "Champion", value: participant.championName, inline: true },
-      { name: "Role", value: participant.teamPosition, inline: true },
+      { name: "Role", value: participant.teamPosition || "N/A", inline: true },
       {
         name: "KDA",
         value: `${participant.kills}/${participant.deaths}/${participant.assists}`,
         inline: true,
       },
       {
-        name: "Vision Score",
+        name: "Vision",
         value: participant.visionScore.toString(),
         inline: true,
       },
+      { name: "CS (Farm)", value: `${farm} (${csPerMin} / min)`, inline: true },
+      { name: "Duration", value: durationStr, inline: true },
+      { name: "Current Rank", value: currentRankDisplay, inline: true },
     )
     .setThumbnail(
       `https://ddragon.leagueoflegends.com/cdn/14.8.1/img/champion/${participant.championName}.png`,
@@ -137,7 +169,6 @@ export async function editMessageToOffline(
       if (!messageToEdit) return;
 
       const embedOffline = buildOfflineEmbed(broadcasterName, login);
-
       await messageToEdit.edit({
         content: `~~${broadcasterName}~~ (Offline)`,
         embeds: [embedOffline],

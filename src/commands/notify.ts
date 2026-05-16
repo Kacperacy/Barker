@@ -80,6 +80,17 @@ export const command: Command = {
             .setDescription("Riot ID format (Name#Tag)")
             .setRequired(true),
         )
+        .addStringOption((opt) =>
+          opt
+            .setName("region")
+            .setDescription("Server region")
+            .setRequired(true)
+            .addChoices(
+              { name: "EUNE (Europe Nordic & East)", value: "eune" },
+              { name: "EUW (Europe West)", value: "euw" },
+              { name: "NA (North America)", value: "na" },
+            ),
+        )
         .addChannelOption((opt) =>
           opt
             .setName("channel")
@@ -150,6 +161,8 @@ export const command: Command = {
     if (subcommand === "lol") {
       await interaction.deferReply();
       const riotIdInput = interaction.options.getString("riotid", true);
+      const region = interaction.options.getString("region", true);
+      const channel = interaction.options.getChannel("channel", true);
 
       if (!riotIdInput.includes("#")) {
         await interaction.editReply(
@@ -167,19 +180,31 @@ export const command: Command = {
         return;
       }
 
-      const playerData = await getPuuidByRiotId(gameName, tagLine);
+      // Potrzebujemy "regional" (europe, americas) aby pobrać PUUID
+      const regionalRouting = region === "na" ? "americas" : "europe";
+      const playerData = await getPuuidByRiotId(
+        gameName,
+        tagLine,
+        regionalRouting,
+      );
 
       if (!playerData || !playerData.puuid) {
         await interaction.editReply(
-          `❌ Could not find player **${riotIdInput}**.`,
+          `❌ Could not find player **${riotIdInput}** on ${region.toUpperCase()}.`,
         );
         return;
       }
 
-      addLoLSubscription(guildId, channel.id, playerData.puuid, riotIdInput);
+      addLoLSubscription(
+        guildId,
+        channel.id,
+        playerData.puuid,
+        riotIdInput,
+        region,
+      );
 
       await interaction.editReply(
-        `✅ Now tracking League of Legends matches for **${riotIdInput}** in <#${channel.id}>.`,
+        `✅ Now tracking League of Legends matches for **${riotIdInput}** (${region.toUpperCase()}) in <#${channel.id}>.`,
       );
     }
   },
