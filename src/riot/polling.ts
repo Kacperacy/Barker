@@ -3,7 +3,6 @@ import {
   getLatestMatchId,
   getMatchDetails,
   REGIONS,
-  getSummonerData,
   getLeagueData,
 } from "./api";
 import { logger } from "../utils/logger";
@@ -70,20 +69,19 @@ export function startRiotPolling(client: Client) {
             continue;
           }
 
-          // Fetching LP and Rank
-          const summoner = await getSummonerData(
-            player.puuid,
-            regionData.platform,
+          const participant = matchData.info.participants.find(
+            (p: any) => p.puuid === player.puuid,
           );
+
           let soloQ: any = null;
 
-          if (!summoner || !summoner.id) {
+          if (!participant || !participant.summonerId) {
             logger.warn(
-              `[Riot Polling] Could not find Summoner ID for ${player.riot_id}. Cannot fetch rank.`,
+              `[Riot Polling] Could not find Summoner ID in match data for ${player.riot_id}. Cannot fetch rank.`,
             );
           } else {
             const leagueEntries = await getLeagueData(
-              summoner.id,
+              participant.summonerId,
               regionData.platform,
             );
 
