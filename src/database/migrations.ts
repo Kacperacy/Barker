@@ -72,4 +72,20 @@ export function runMigrations() {
       league_points INTEGER
     )`,
   ).run();
+
+  db.query(
+    `CREATE TABLE IF NOT EXISTS lol_player_matches (
+      puuid TEXT,
+      match_id TEXT,
+      kills INTEGER,
+      deaths INTEGER,
+      assists INTEGER,
+      win INTEGER,
+      duration INTEGER,
+      is_remake INTEGER,
+      timestamp INTEGER,
+      raw_json TEXT,
+      PRIMARY KEY (puuid, match_id)
+    )`,
+  ).run();
 }

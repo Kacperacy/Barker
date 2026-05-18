@@ -8,6 +8,19 @@ export interface LoLSubscription {
   region: string;
 }
 
+export interface LoLPlayerMatch {
+  puuid: string;
+  match_id: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  win: number;
+  duration: number;
+  is_remake: number;
+  timestamp: number;
+  raw_json: string;
+}
+
 export const addLoLSubscription = (
   guildId: string,
   channelId: string,
@@ -80,4 +93,47 @@ export const getLastMatch = (
     )
     .get(puuid) as any;
   return res ? res : null;
+};
+
+export const saveLoLPlayerMatch = (match: LoLPlayerMatch) => {
+  db.query(
+    `INSERT OR IGNORE INTO lol_player_matches (puuid, match_id, kills, deaths, assists, win, duration, is_remake, timestamp, raw_json)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+  ).run(
+    match.puuid,
+    match.match_id,
+    match.kills,
+    match.deaths,
+    match.assists,
+    match.win,
+    match.duration,
+    match.is_remake,
+    match.timestamp,
+    match.raw_json,
+  );
+};
+
+export const getPlayerMatchesSince = (
+  puuid: string,
+  timestampMs: number,
+): LoLPlayerMatch[] => {
+  return db
+    .query(
+      "SELECT * FROM lol_player_matches WHERE puuid = ?1 AND timestamp >= ?2",
+    )
+    .all(puuid, timestampMs) as LoLPlayerMatch[];
+};
+
+export const getAllLoLChannels = (): { channel_id: string }[] => {
+  return db
+    .query("SELECT DISTINCT channel_id FROM lol_subscriptions")
+    .all() as { channel_id: string }[];
+};
+
+export const getLoLSubscriptionsByChannel = (
+  channelId: string,
+): LoLSubscription[] => {
+  return db
+    .query("SELECT * FROM lol_subscriptions WHERE channel_id = ?1")
+    .all(channelId) as LoLSubscription[];
 };

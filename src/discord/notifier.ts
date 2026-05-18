@@ -57,7 +57,6 @@ export function buildLoLLiveEmbed(
 
   const isRemake =
     participant.gameEndedInEarlySurrender || matchData.info.gameDuration < 300;
-
   const shouldMarkAsVictory = participant.win;
 
   let embedColor = shouldMarkAsVictory ? 0x00ff00 : 0xff0000;
@@ -68,13 +67,11 @@ export function buildLoLLiveEmbed(
     resultTitle = "Remake";
   }
 
-  // Duration
   const durationSeconds = matchData.info.gameDuration;
   const minutes = Math.floor(durationSeconds / 60);
   const seconds = durationSeconds % 60;
   const durationStr = `${minutes}m ${seconds}s`;
 
-  // Farm
   const farm =
     (participant.totalMinionsKilled || 0) +
     (participant.neutralMinionsKilled || 0);
@@ -86,7 +83,6 @@ export function buildLoLLiveEmbed(
   const rawMatchId = matchData.metadata.matchId.split("_")[1];
   const matchLink = `https://www.leagueofgraphs.com/match/${regionOpgg}/${rawMatchId}`;
 
-  // Rank Display
   const currentRankDisplay = rankText
     ? `${rankText}${lpChangeText}`
     : "Unranked";

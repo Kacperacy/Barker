@@ -11,6 +11,7 @@ import {
   getLastMatch,
   updateLastMatch,
   getSubscriptionsForLoLPlayer,
+  saveLoLPlayerMatch,
 } from "../database/repositories/lolSubscriptions";
 import { buildLoLLiveEmbed } from "../discord/notifier";
 
@@ -59,21 +60,6 @@ export function startRiotPolling(client: Client) {
           );
           if (!matchData) continue;
 
-          const participant = matchData.info.participants.find(
-            (p: any) => p.puuid === player.puuid,
-          );
-          const isRemake =
-            participant?.gameEndedInEarlySurrender ||
-            matchData.info.gameDuration < 300;
-
-          if (isRemake) {
-            updateLastMatch(player.puuid, latestMatchId, null, null, null);
-            logger.info(
-              `[Riot Polling] Zignorowano Remake dla ${player.riot_id}`,
-            );
-            continue;
-          }
-
           const actualPlatform = matchData.info.platformId
             ? matchData.info.platformId.toLowerCase()
             : regionData.platform;
@@ -118,6 +104,28 @@ export function startRiotPolling(client: Client) {
             logger.warn(
               `[Riot Polling] soloQ is null for ${player.riot_id}, falling back to Unranked.`,
             );
+          }
+
+          const participant = matchData.info.participants.find(
+            (p: any) => p.puuid === player.puuid,
+          );
+
+          if (participant) {
+            const isRemake =
+              participant.gameEndedInEarlySurrender ||
+              matchData.info.gameDuration < 300;
+            saveLoLPlayerMatch({
+              puuid: player.puuid,
+              match_id: latestMatchId,
+              kills: participant.kills,
+              deaths: participant.deaths,
+              assists: participant.assists,
+              win: participant.win ? 1 : 0,
+              duration: matchData.info.gameDuration,
+              is_remake: isRemake ? 1 : 0,
+              timestamp: matchData.info.gameCreation,
+              raw_json: JSON.stringify(matchData),
+            });
           }
 
           const subs = getSubscriptionsForLoLPlayer(player.puuid);

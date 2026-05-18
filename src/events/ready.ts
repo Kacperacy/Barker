@@ -4,6 +4,7 @@ import { startEventSub } from "../twitch/eventsub";
 import { setupTwitchHandlers } from "../twitch/handlers";
 import { startCategoryPolling } from "../twitch/categoryPolling";
 import { startRiotPolling } from "../riot/polling";
+import { startDailySummaryTimer } from "../riot/summary";
 
 export default (client: Client) => {
   client.once(Events.ClientReady, (readyClient) => {
@@ -13,5 +14,6 @@ export default (client: Client) => {
     startEventSub();
     startCategoryPolling(client);
     startRiotPolling(client);
+    startDailySummaryTimer(client);
   });
 };
