@@ -54,9 +54,19 @@ export function buildLoLLiveEmbed(
   const participant = matchData.info.participants.find(
     (p: any) => p.puuid === puuid,
   );
+
+  const isRemake =
+    participant.gameEndedInEarlySurrender || matchData.info.gameDuration < 300;
+
   const shouldMarkAsVictory = participant.win;
-  const embedColor = shouldMarkAsVictory ? 0x00ff00 : 0xff0000;
-  const resultTitle = shouldMarkAsVictory ? "Victory" : "Defeat";
+
+  let embedColor = shouldMarkAsVictory ? 0x00ff00 : 0xff0000;
+  let resultTitle = shouldMarkAsVictory ? "Victory" : "Defeat";
+
+  if (isRemake) {
+    embedColor = 0x808080;
+    resultTitle = "Remake";
+  }
 
   // Duration
   const durationSeconds = matchData.info.gameDuration;

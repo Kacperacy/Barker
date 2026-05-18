@@ -59,6 +59,21 @@ export function startRiotPolling(client: Client) {
           );
           if (!matchData) continue;
 
+          const participant = matchData.info.participants.find(
+            (p: any) => p.puuid === player.puuid,
+          );
+          const isRemake =
+            participant?.gameEndedInEarlySurrender ||
+            matchData.info.gameDuration < 300;
+
+          if (isRemake) {
+            updateLastMatch(player.puuid, latestMatchId, null, null, null);
+            logger.info(
+              `[Riot Polling] Zignorowano Remake dla ${player.riot_id}`,
+            );
+            continue;
+          }
+
           const actualPlatform = matchData.info.platformId
             ? matchData.info.platformId.toLowerCase()
             : regionData.platform;
