@@ -92,7 +92,7 @@ export async function sendDailyLoLSummary(client: Client) {
 export function startDailySummaryTimer(client: Client) {
   setInterval(() => {
     const now = new Date();
-    if (now.getHours() === 22 && now.getMinutes() === 0) {
+    if (now.getHours() === 6 && now.getMinutes() === 0) {
       sendDailyLoLSummary(client);
     }
   }, 60000);
