@@ -12,6 +12,7 @@ import {
   updateLastMatch,
   getSubscriptionsForLoLPlayer,
   saveLoLPlayerMatch,
+  getPlayerStreak,
 } from "../database/repositories/lolSubscriptions";
 import { buildLoLLiveEmbed } from "../discord/notifier";
 
@@ -128,6 +129,7 @@ export function startRiotPolling(client: Client) {
             });
           }
 
+          const streak = getPlayerStreak(player.puuid);
           const subs = getSubscriptionsForLoLPlayer(player.puuid);
           const embed = buildLoLLiveEmbed(
             matchData,
@@ -136,6 +138,7 @@ export function startRiotPolling(client: Client) {
             regionData.opgg,
             rankText,
             lpChangeText,
+            streak,
           );
 
           for (const sub of subs) {

@@ -124,6 +124,33 @@ export const getPlayerMatchesSince = (
     .all(puuid, timestampMs) as LoLPlayerMatch[];
 };
 
+export const getPlayerStreak = (puuid: string): string => {
+  const matches = db
+    .query(
+      "SELECT win, is_remake FROM lol_player_matches WHERE puuid = ?1 ORDER BY timestamp DESC LIMIT 50",
+    )
+    .all(puuid) as { win: number; is_remake: number }[];
+
+  let streakType: "W" | "L" | null = null;
+  let count = 0;
+
+  for (const match of matches) {
+    if (match.is_remake === 1) continue;
+    const currentType = match.win === 1 ? "W" : "L";
+
+    if (streakType === null) {
+      streakType = currentType;
+      count = 1;
+    } else if (streakType === currentType) {
+      count++;
+    } else {
+      break;
+    }
+  }
+
+  return count > 0 ? `${count}${streakType}` : "None";
+};
+
 export const getAllLoLChannels = (): { channel_id: string }[] => {
   return db
     .query("SELECT DISTINCT channel_id FROM lol_subscriptions")

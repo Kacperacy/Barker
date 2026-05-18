@@ -50,6 +50,7 @@ export function buildLoLLiveEmbed(
   regionOpgg: string,
   rankText: string,
   lpChangeText: string,
+  streak: string,
 ): EmbedBuilder {
   const participant = matchData.info.participants.find(
     (p: any) => p.puuid === puuid,
@@ -112,6 +113,7 @@ export function buildLoLLiveEmbed(
       { name: "CS (Farm)", value: `${farm} (${csPerMin} / min)`, inline: true },
       { name: "Duration", value: durationStr, inline: true },
       { name: "Current Rank", value: currentRankDisplay, inline: true },
+      { name: "Current Streak", value: streak, inline: true },
     )
     .setThumbnail(championIconUrl)
     .setTimestamp();

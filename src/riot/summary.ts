@@ -4,6 +4,7 @@ import {
   getAllLoLChannels,
   getLoLSubscriptionsByChannel,
   getPlayerMatchesSince,
+  getPlayerStreak,
 } from "../database/repositories/lolSubscriptions";
 
 export async function sendDailyLoLSummary(client: Client) {
@@ -59,10 +60,12 @@ export async function sendDailyLoLSummary(client: Client) {
           ? ((totalKills + totalAssists) / totalDeaths).toFixed(2)
           : "Perfect";
 
+      const streak = getPlayerStreak(sub.puuid);
+
       let summaryText = `**Record:** ${wins}W - ${losses}L`;
       if (remakes > 0)
         summaryText += ` (${remakes} Remake${remakes > 1 ? "s" : ""})`;
-      summaryText += `\n**Winrate:** ${winrate}%\n**Average KDA:** ${kda}`;
+      summaryText += `\n**Winrate:** ${winrate}%\n**Average KDA:** ${kda}\n**Current Streak:** ${streak}`;
 
       embed.addFields({ name: sub.riot_id, value: summaryText, inline: true });
     }
