@@ -84,8 +84,18 @@ export function runMigrations() {
       duration INTEGER,
       is_remake INTEGER,
       timestamp INTEGER,
+      lp_change INTEGER,
       raw_json TEXT,
       PRIMARY KEY (puuid, match_id)
     )`,
   ).run();
+
+  // Safely add lp_change to existing databases to avoid recreating tables
+  try {
+    db.query(
+      "ALTER TABLE lol_player_matches ADD COLUMN lp_change INTEGER",
+    ).run();
+  } catch (error) {
+    // Ignore error if column already exists
+  }
 }

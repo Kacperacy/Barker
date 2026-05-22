@@ -37,6 +37,7 @@ export async function sendDailyLoLSummary(client: Client) {
       let totalKills = 0;
       let totalDeaths = 0;
       let totalAssists = 0;
+      let totalLpChange = 0;
 
       for (const match of matches) {
         if (match.is_remake === 1) {
@@ -50,6 +51,11 @@ export async function sendDailyLoLSummary(client: Client) {
         totalKills += match.kills;
         totalDeaths += match.deaths;
         totalAssists += match.assists;
+
+        // Tally up the LP change from recorded matches
+        if (match.lp_change !== null && match.lp_change !== undefined) {
+          totalLpChange += match.lp_change;
+        }
       }
 
       const totalPlayed = wins + losses;
@@ -61,11 +67,16 @@ export async function sendDailyLoLSummary(client: Client) {
           : "Perfect";
 
       const streak = getPlayerStreak(sub.puuid);
+      const lpDisplay =
+        totalLpChange > 0
+          ? `+${totalLpChange} LP 📈`
+          : `${totalLpChange} LP 📉`;
 
       let summaryText = `**Record:** ${wins}W - ${losses}L`;
       if (remakes > 0)
         summaryText += ` (${remakes} Remake${remakes > 1 ? "s" : ""})`;
-      summaryText += `\n**Winrate:** ${winrate}%\n**Average KDA:** ${kda}\n**Current Streak:** ${streak}`;
+
+      summaryText += `\n**Winrate:** ${winrate}%\n**Average KDA:** ${kda}\n**Net LP:** ${lpDisplay}\n**Current Streak:** ${streak}`;
 
       embed.addFields({ name: sub.riot_id, value: summaryText, inline: true });
     }

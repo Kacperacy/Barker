@@ -18,6 +18,7 @@ export interface LoLPlayerMatch {
   duration: number;
   is_remake: number;
   timestamp: number;
+  lp_change: number | null;
   raw_json: string;
 }
 
@@ -97,8 +98,8 @@ export const getLastMatch = (
 
 export const saveLoLPlayerMatch = (match: LoLPlayerMatch) => {
   db.query(
-    `INSERT OR IGNORE INTO lol_player_matches (puuid, match_id, kills, deaths, assists, win, duration, is_remake, timestamp, raw_json)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+    `INSERT OR IGNORE INTO lol_player_matches (puuid, match_id, kills, deaths, assists, win, duration, is_remake, timestamp, lp_change, raw_json)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
   ).run(
     match.puuid,
     match.match_id,
@@ -109,6 +110,7 @@ export const saveLoLPlayerMatch = (match: LoLPlayerMatch) => {
     match.duration,
     match.is_remake,
     match.timestamp,
+    match.lp_change,
     match.raw_json,
   );
 };

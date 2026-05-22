@@ -80,6 +80,7 @@ export function startRiotPolling(client: Client) {
 
           let rankText = "";
           let lpChangeText = "";
+          let lpChangeForMatch: number | null = null;
 
           if (soloQ) {
             rankText = `${capitalizeFirst(soloQ.tier)} ${soloQ.rank} - ${soloQ.leaguePoints} LP`;
@@ -93,10 +94,12 @@ export function startRiotPolling(client: Client) {
                 lastKnownMatch.tier === soloQ.tier &&
                 lastKnownMatch.rank === soloQ.rank
               ) {
-                const lpDiff =
+                lpChangeForMatch =
                   soloQ.leaguePoints - (lastKnownMatch.league_points || 0);
-                if (lpDiff > 0) lpChangeText = ` (+${lpDiff})`;
-                else if (lpDiff < 0) lpChangeText = ` (${lpDiff})`;
+                if (lpChangeForMatch > 0)
+                  lpChangeText = ` (+${lpChangeForMatch})`;
+                else if (lpChangeForMatch < 0)
+                  lpChangeText = ` (${lpChangeForMatch})`;
               } else {
                 lpChangeText = " (Rank Changed!)";
               }
@@ -115,6 +118,7 @@ export function startRiotPolling(client: Client) {
             const isRemake =
               participant.gameEndedInEarlySurrender ||
               matchData.info.gameDuration < 300;
+
             saveLoLPlayerMatch({
               puuid: player.puuid,
               match_id: latestMatchId,
@@ -125,6 +129,7 @@ export function startRiotPolling(client: Client) {
               duration: matchData.info.gameDuration,
               is_remake: isRemake ? 1 : 0,
               timestamp: matchData.info.gameCreation,
+              lp_change: lpChangeForMatch,
               raw_json: JSON.stringify(matchData),
             });
           }
