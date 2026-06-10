@@ -22,6 +22,39 @@ function capitalizeFirst(str: string) {
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
+function getAbsoluteLp(tier: string, rank: string, lp: number): number {
+  if (!tier) return 0;
+
+  const TIER_VALUES: Record<string, number> = {
+    IRON: 0,
+    BRONZE: 400,
+    SILVER: 800,
+    GOLD: 1200,
+    PLATINUM: 1600,
+    EMERALD: 2000,
+    DIAMOND: 2400,
+    MASTER: 2800,
+    GRANDMASTER: 2800,
+    CHALLENGER: 2800,
+  };
+  const RANK_VALUES: Record<string, number> = {
+    IV: 0,
+    III: 100,
+    II: 200,
+    I: 300,
+  };
+
+  const upperTier = tier.toUpperCase();
+  const base = TIER_VALUES[upperTier] || 0;
+
+  if (["MASTER", "GRANDMASTER", "CHALLENGER"].includes(upperTier)) {
+    return base + lp;
+  }
+
+  const rankBase = RANK_VALUES[rank.toUpperCase()] || 0;
+  return base + rankBase + lp;
+}
+
 export function startRiotPolling(client: Client) {
   setInterval(async () => {
     if (shouldSkipPolling) return;
@@ -61,6 +94,21 @@ export function startRiotPolling(client: Client) {
           );
           if (!matchData) continue;
 
+          // Filter to only notify and process Ranked Solo/Duo (queueId === 420)
+          if (matchData.info.queueId !== 420) {
+            logger.info(
+              `[Riot Polling] Match ${latestMatchId} is not Solo/Duo Ranked. Skipping notification.`,
+            );
+            updateLastMatch(
+              player.puuid,
+              latestMatchId,
+              lastKnownMatch?.tier || null,
+              lastKnownMatch?.rank || null,
+              lastKnownMatch?.league_points ?? null,
+            );
+            continue;
+          }
+
           const actualPlatform = matchData.info.platformId
             ? matchData.info.platformId.toLowerCase()
             : regionData.platform;
@@ -85,24 +133,25 @@ export function startRiotPolling(client: Client) {
           if (soloQ) {
             rankText = `${capitalizeFirst(soloQ.tier)} ${soloQ.rank} - ${soloQ.leaguePoints} LP`;
 
-            if (
-              lastKnownMatch &&
-              lastKnownMatch.tier &&
-              matchData.info.queueId === 420
-            ) {
-              if (
-                lastKnownMatch.tier === soloQ.tier &&
-                lastKnownMatch.rank === soloQ.rank
-              ) {
-                lpChangeForMatch =
-                  soloQ.leaguePoints - (lastKnownMatch.league_points || 0);
-                if (lpChangeForMatch > 0)
-                  lpChangeText = ` (+${lpChangeForMatch})`;
-                else if (lpChangeForMatch < 0)
-                  lpChangeText = ` (${lpChangeForMatch})`;
-              } else {
-                lpChangeText = " (Rank Changed!)";
-              }
+            if (lastKnownMatch && lastKnownMatch.tier) {
+              const oldAbsLp = getAbsoluteLp(
+                lastKnownMatch.tier,
+                lastKnownMatch.rank,
+                lastKnownMatch.league_points || 0,
+              );
+              const newAbsLp = getAbsoluteLp(
+                soloQ.tier,
+                soloQ.rank,
+                soloQ.leaguePoints,
+              );
+
+              lpChangeForMatch = newAbsLp - oldAbsLp;
+
+              if (lpChangeForMatch > 0)
+                lpChangeText = ` (+${lpChangeForMatch})`;
+              else if (lpChangeForMatch < 0)
+                lpChangeText = ` (${lpChangeForMatch})`;
+              else lpChangeText = ` (+0)`;
             }
           } else {
             logger.warn(

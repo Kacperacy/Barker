@@ -5,7 +5,13 @@ import {
   getLoLSubscriptionsByChannel,
   getPlayerMatchesSince,
   getPlayerStreak,
+  getLastMatch,
 } from "../database/repositories/lolSubscriptions";
+
+function capitalizeFirst(str: string) {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
 
 export async function sendDailyLoLSummary(client: Client) {
   logger.info(
@@ -52,7 +58,6 @@ export async function sendDailyLoLSummary(client: Client) {
         totalDeaths += match.deaths;
         totalAssists += match.assists;
 
-        // Tally up the LP change from recorded matches
         if (match.lp_change !== null && match.lp_change !== undefined) {
           totalLpChange += match.lp_change;
         }
@@ -72,7 +77,13 @@ export async function sendDailyLoLSummary(client: Client) {
           ? `+${totalLpChange} LP 📈`
           : `${totalLpChange} LP 📉`;
 
-      let summaryText = `**Record:** ${wins}W - ${losses}L`;
+      const lastMatchInfo = getLastMatch(sub.puuid);
+      let currentRankStr = "Unranked";
+      if (lastMatchInfo && lastMatchInfo.tier) {
+        currentRankStr = `${capitalizeFirst(lastMatchInfo.tier)} ${lastMatchInfo.rank} - ${lastMatchInfo.league_points} LP`;
+      }
+
+      let summaryText = `**Rank:** ${currentRankStr}\n**Record:** ${wins}W - ${losses}L`;
       if (remakes > 0)
         summaryText += ` (${remakes} Remake${remakes > 1 ? "s" : ""})`;
 
