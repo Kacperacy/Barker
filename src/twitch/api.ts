@@ -172,7 +172,11 @@ export async function getStreamsByCategory(
     const data = (await res.json()) as any;
 
     if (data.data) {
-      allStreams = allStreams.concat(data.data);
+      const validStreams = data.data.filter(
+        (stream: any) =>
+          stream.game_id === categoryId && stream.language === language,
+      );
+      allStreams = allStreams.concat(validStreams);
     }
 
     cursor =
