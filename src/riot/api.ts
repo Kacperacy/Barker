@@ -1,13 +1,33 @@
 import { env } from "../config";
 import { logger } from "../utils/logger";
+import { fetchWithRetry, RateLimiter } from "../utils/http";
+import {
+  accountDtoSchema,
+  leagueEntriesSchema,
+  matchDtoSchema,
+  matchIdsSchema,
+} from "./schemas";
 
 const RIOT_HEADERS = {
   "X-Riot-Token": env.RIOT_API_KEY,
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept-Language": "en-US,en;q=0.9",
-  "Accept-Charset": "application/x-www-form-urlencoded; charset=UTF-8",
 };
+
+const riotRateLimiter = new RateLimiter([
+  { maxRequests: env.RIOT_RATE_LIMIT_PER_SECOND, windowMs: 1000 },
+  { maxRequests: env.RIOT_RATE_LIMIT_PER_TWO_MINUTES, windowMs: 120000 },
+]);
+
+async function riotFetch(url: string): Promise<Response> {
+  return fetchWithRetry(
+    url,
+    { headers: RIOT_HEADERS },
+    {
+      retries: env.HTTP_RETRY_MAX_ATTEMPTS,
+      baseDelayMs: env.HTTP_RETRY_BASE_DELAY_MS,
+      rateLimiter: riotRateLimiter,
+    },
+  );
+}
 
 export const REGIONS: Record<
   string,
@@ -23,9 +43,8 @@ export async function getPuuidByRiotId(
   tagLine: string,
   regional: string,
 ): Promise<{ puuid: string; gameName: string; tagLine: string } | null> {
-  const res = await fetch(
+  const res = await riotFetch(
     `https://${regional}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`,
-    { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
     logger.error(
@@ -33,20 +52,23 @@ export async function getPuuidByRiotId(
     );
     return null;
   }
-  return (await res.json()) as {
-    puuid: string;
-    gameName: string;
-    tagLine: string;
-  };
+
+  const parsed = accountDtoSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    logger.error(
+      `[Riot API] getPuuidByRiotId: unexpected response shape: ${parsed.error.message}`,
+    );
+    return null;
+  }
+  return parsed.data;
 }
 
 export async function getLatestMatchId(
   puuid: string,
   regional: string,
 ): Promise<string | null> {
-  const res = await fetch(
+  const res = await riotFetch(
     `https://${regional}.api.riotgames.com/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=0&count=1`,
-    { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
     logger.error(
@@ -54,17 +76,23 @@ export async function getLatestMatchId(
     );
     return null;
   }
-  const data = (await res.json()) as string[];
-  return data[0] ?? null;
+
+  const parsed = matchIdsSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    logger.error(
+      `[Riot API] getLatestMatchId: unexpected response shape: ${parsed.error.message}`,
+    );
+    return null;
+  }
+  return parsed.data[0] ?? null;
 }
 
 export async function getMatchDetails(
   matchId: string,
   regional: string,
 ): Promise<any | null> {
-  const res = await fetch(
+  const res = await riotFetch(
     `https://${regional}.api.riotgames.com/lol/match/v5/matches/${encodeURIComponent(matchId)}`,
-    { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
     logger.error(
@@ -72,17 +100,23 @@ export async function getMatchDetails(
     );
     return null;
   }
-  return (await res.json()) as any;
+
+  const parsed = matchDtoSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    logger.error(
+      `[Riot API] getMatchDetails: unexpected response shape: ${parsed.error.message}`,
+    );
+    return null;
+  }
+  return parsed.data;
 }
 
 export async function getLeagueData(
   puuid: string,
   platform: string,
 ): Promise<any[] | null> {
-  // UWAGA: Nowy autoryzowany endpoint wg dokumentacji, którą wkleiłeś:
-  const res = await fetch(
+  const res = await riotFetch(
     `https://${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`,
-    { headers: RIOT_HEADERS },
   );
   if (!res.ok) {
     logger.error(
@@ -90,5 +124,13 @@ export async function getLeagueData(
     );
     return null;
   }
-  return (await res.json()) as any[];
+
+  const parsed = leagueEntriesSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    logger.error(
+      `[Riot API] getLeagueData: unexpected response shape: ${parsed.error.message}`,
+    );
+    return null;
+  }
+  return parsed.data;
 }

@@ -1,59 +1,30 @@
-import { Client, TextChannel } from "discord.js";
+import { Client } from "discord.js";
 import {
   getLatestMatchId,
   getMatchDetails,
   REGIONS,
   getLeagueData,
 } from "./api";
+import {
+  RANKED_SOLO_QUEUE_ID,
+  capitalizeFirst,
+  computeLpDiff,
+  isRemake,
+} from "./rank";
 import { logger } from "../utils/logger";
+import { env } from "../config";
 import {
   getAllUniqueLoLPlayers,
   getLastMatch,
-  updateLastMatch,
+  saveMatchAndUpdateLastMatch,
   getSubscriptionsForLoLPlayer,
-  saveLoLPlayerMatch,
   getPlayerStreak,
+  type LoLPlayerMatch,
 } from "../database/repositories/lolSubscriptions";
-import { buildLoLLiveEmbed } from "../discord/notifier";
+import { buildLoLLiveEmbed } from "../discord/embeds";
+import { sendLoLMatchNotification } from "../discord/delivery";
 
 let shouldSkipPolling = false;
-
-function capitalizeFirst(str: string) {
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-}
-
-function getAbsoluteLp(tier: string, rank: string, lp: number): number {
-  if (!tier) return 0;
-
-  const TIER_VALUES: Record<string, number> = {
-    IRON: 0,
-    BRONZE: 400,
-    SILVER: 800,
-    GOLD: 1200,
-    PLATINUM: 1600,
-    EMERALD: 2000,
-    DIAMOND: 2400,
-    MASTER: 2800,
-    GRANDMASTER: 2800,
-    CHALLENGER: 2800,
-  };
-  const RANK_VALUES: Record<string, number> = {
-    IV: 0,
-    III: 100,
-    II: 200,
-    I: 300,
-  };
-
-  const upperTier = tier.toUpperCase();
-  const base = TIER_VALUES[upperTier] || 0;
-
-  if (["MASTER", "GRANDMASTER", "CHALLENGER"].includes(upperTier)) {
-    return base + lp;
-  }
-
-  const rankBase = RANK_VALUES[rank.toUpperCase()] || 0;
-  return base + rankBase + lp;
-}
 
 export function startRiotPolling(client: Client) {
   setInterval(async () => {
@@ -94,18 +65,18 @@ export function startRiotPolling(client: Client) {
           );
           if (!matchData) continue;
 
-          // Filter to only notify and process Ranked Solo/Duo (queueId === 420)
-          if (matchData.info.queueId !== 420) {
+          // Filter to only notify and process Ranked Solo/Duo
+          if (matchData.info.queueId !== RANKED_SOLO_QUEUE_ID) {
             logger.info(
               `[Riot Polling] Match ${latestMatchId} is not Solo/Duo Ranked. Skipping notification.`,
             );
-            updateLastMatch(
-              player.puuid,
-              latestMatchId,
-              lastKnownMatch?.tier || null,
-              lastKnownMatch?.rank || null,
-              lastKnownMatch?.league_points ?? null,
-            );
+            saveMatchAndUpdateLastMatch(null, {
+              puuid: player.puuid,
+              matchId: latestMatchId,
+              tier: lastKnownMatch?.tier || null,
+              rank: lastKnownMatch?.rank || null,
+              leaguePoints: lastKnownMatch?.league_points ?? null,
+            });
             continue;
           }
 
@@ -133,25 +104,18 @@ export function startRiotPolling(client: Client) {
           if (soloQ) {
             rankText = `${capitalizeFirst(soloQ.tier)} ${soloQ.rank} - ${soloQ.leaguePoints} LP`;
 
-            if (lastKnownMatch && lastKnownMatch.tier) {
-              const oldAbsLp = getAbsoluteLp(
-                lastKnownMatch.tier,
-                lastKnownMatch.rank,
-                lastKnownMatch.league_points || 0,
-              );
-              const newAbsLp = getAbsoluteLp(
-                soloQ.tier,
-                soloQ.rank,
-                soloQ.leaguePoints,
-              );
+            const lpDiff = computeLpDiff(
+              lastKnownMatch?.tier,
+              lastKnownMatch?.rank ?? "",
+              lastKnownMatch?.league_points,
+              soloQ.tier,
+              soloQ.rank,
+              soloQ.leaguePoints,
+            );
 
-              lpChangeForMatch = newAbsLp - oldAbsLp;
-
-              if (lpChangeForMatch > 0)
-                lpChangeText = ` (+${lpChangeForMatch})`;
-              else if (lpChangeForMatch < 0)
-                lpChangeText = ` (${lpChangeForMatch})`;
-              else lpChangeText = ` (+0)`;
+            if (lpDiff) {
+              lpChangeForMatch = lpDiff.lpChange;
+              lpChangeText = lpDiff.lpChangeText;
             }
           } else {
             logger.warn(
@@ -163,12 +127,14 @@ export function startRiotPolling(client: Client) {
             (p: any) => p.puuid === player.puuid,
           );
 
+          let matchToSave: LoLPlayerMatch | null = null;
           if (participant) {
-            const isRemake =
-              participant.gameEndedInEarlySurrender ||
-              matchData.info.gameDuration < 300;
+            const remake = isRemake(
+              matchData.info.gameDuration,
+              participant.gameEndedInEarlySurrender,
+            );
 
-            saveLoLPlayerMatch({
+            matchToSave = {
               puuid: player.puuid,
               match_id: latestMatchId,
               kills: participant.kills,
@@ -176,12 +142,20 @@ export function startRiotPolling(client: Client) {
               assists: participant.assists,
               win: participant.win ? 1 : 0,
               duration: matchData.info.gameDuration,
-              is_remake: isRemake ? 1 : 0,
+              is_remake: remake ? 1 : 0,
               timestamp: matchData.info.gameCreation,
               lp_change: lpChangeForMatch,
               raw_json: JSON.stringify(matchData),
-            });
+            };
           }
+
+          saveMatchAndUpdateLastMatch(matchToSave, {
+            puuid: player.puuid,
+            matchId: latestMatchId,
+            tier: soloQ ? soloQ.tier : null,
+            rank: soloQ ? soloQ.rank : null,
+            leaguePoints: soloQ ? soloQ.leaguePoints : null,
+          });
 
           const streak = getPlayerStreak(player.puuid);
           const subs = getSubscriptionsForLoLPlayer(player.puuid);
@@ -196,24 +170,17 @@ export function startRiotPolling(client: Client) {
           );
 
           for (const sub of subs) {
-            const channel = (await client.channels.fetch(
+            const messageId = await sendLoLMatchNotification(
+              client,
               sub.channel_id,
-            )) as TextChannel;
-            if (channel) {
-              await channel.send({ embeds: [embed] });
+              embed,
+            );
+            if (messageId) {
               logger.info(
                 `[Riot Polling] Notification sent for ${player.riot_id} to channel ${sub.channel_id}`,
               );
             }
           }
-
-          updateLastMatch(
-            player.puuid,
-            latestMatchId,
-            soloQ ? soloQ.tier : null,
-            soloQ ? soloQ.rank : null,
-            soloQ ? soloQ.leaguePoints : null,
-          );
         }
       }
     } catch (error) {
@@ -221,5 +188,5 @@ export function startRiotPolling(client: Client) {
     } finally {
       shouldSkipPolling = false;
     }
-  }, 120000);
+  }, env.RIOT_POLL_INTERVAL_MS);
 }

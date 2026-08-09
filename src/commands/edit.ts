@@ -4,14 +4,13 @@ import {
   AutocompleteInteraction,
 } from "discord.js";
 import type { Command } from "../types";
+import { requireGuildId } from "../utils/discord";
+import { getGuildSubscriptions } from "../database/repositories/subscriptions";
+import { getGuildCategorySubscriptions } from "../database/repositories/categorySubscriptions";
 import {
-  getGuildSubscriptions,
-  updateSubscriptionMessage,
-} from "../database/repositories/subscriptions";
-import {
-  getGuildCategorySubscriptions,
-  updateCategorySubscriptionMessage,
-} from "../database/repositories/categorySubscriptions";
+  updateCategoryMessage,
+  updateStreamerMessage,
+} from "../services/twitchSubscriptions";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
@@ -93,15 +92,9 @@ export const command: Command = {
 
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
-    const guildId = interaction.guildId;
 
-    if (!guildId) {
-      await interaction.reply({
-        content: "This command can only be used in a server.",
-        ephemeral: true,
-      });
-      return;
-    }
+    const guildId = await requireGuildId(interaction);
+    if (!guildId) return;
 
     const newMessage = interaction.options.getString("message", true);
 
@@ -110,7 +103,7 @@ export const command: Command = {
         .getString("username", true)
         .toLowerCase();
 
-      updateSubscriptionMessage(guildId, username, newMessage);
+      updateStreamerMessage(guildId, username, newMessage);
       await interaction.reply(
         `✅ Updated custom message for streamer **${username}**.`,
       );
@@ -128,12 +121,7 @@ export const command: Command = {
         return;
       }
 
-      updateCategorySubscriptionMessage(
-        guildId,
-        categoryName,
-        language,
-        newMessage,
-      );
+      updateCategoryMessage(guildId, categoryName, language, newMessage);
       await interaction.reply(
         `✅ Updated custom message for category **${categoryName}** (${language}).`,
       );

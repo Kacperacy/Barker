@@ -1,5 +1,7 @@
 import { Client, TextChannel, EmbedBuilder } from "discord.js";
 import { logger } from "../utils/logger";
+import { env } from "../config";
+import { capitalizeFirst } from "./rank";
 import {
   getAllLoLChannels,
   getLoLSubscriptionsByChannel,
@@ -7,11 +9,6 @@ import {
   getPlayerStreak,
   getLastMatch,
 } from "../database/repositories/lolSubscriptions";
-
-function capitalizeFirst(str: string) {
-  if (!str) return "";
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-}
 
 export async function sendDailyLoLSummary(client: Client) {
   logger.info(
@@ -114,8 +111,8 @@ export async function sendDailyLoLSummary(client: Client) {
 export function startDailySummaryTimer(client: Client) {
   setInterval(() => {
     const now = new Date();
-    if (now.getHours() === 6 && now.getMinutes() === 0) {
+    if (now.getHours() === env.DAILY_SUMMARY_HOUR && now.getMinutes() === 0) {
       sendDailyLoLSummary(client);
     }
-  }, 60000);
+  }, env.SUMMARY_CHECK_INTERVAL_MS);
 }

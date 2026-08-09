@@ -1,5 +1,7 @@
+import { env } from "../config";
+
 const channelQueues = new Map<string, Promise<any>>();
-const DELAY_MS = 1500;
+const DELAY_MS = env.DISCORD_QUEUE_DELAY_MS;
 
 export async function queueDiscordAction<T>(
   channelId: string,
@@ -18,5 +20,17 @@ export async function queueDiscordAction<T>(
   });
 
   channelQueues.set(channelId, nextPromise);
+
+  // Evict the entry once settled, unless a newer action has already replaced it.
+  nextPromise.finally(() => {
+    if (channelQueues.get(channelId) === nextPromise) {
+      channelQueues.delete(channelId);
+    }
+  });
+
   return nextPromise;
+}
+
+export function getQueuedChannelCount(): number {
+  return channelQueues.size;
 }

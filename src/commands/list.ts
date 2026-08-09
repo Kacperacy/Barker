@@ -4,6 +4,7 @@ import {
   EmbedBuilder,
 } from "discord.js";
 import type { Command } from "../types";
+import { requireGuildId } from "../utils/discord";
 import { getGuildSubscriptions } from "../database/repositories/subscriptions";
 import { getGuildCategorySubscriptions } from "../database/repositories/categorySubscriptions";
 import { getGuildLoLSubscriptions } from "../database/repositories/lolSubscriptions";
@@ -17,15 +18,8 @@ export const command: Command = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    const guildId = interaction.guildId;
-
-    if (!guildId) {
-      await interaction.reply({
-        content: "This command can only be used in a server.",
-        ephemeral: true,
-      });
-      return;
-    }
+    const guildId = await requireGuildId(interaction);
+    if (!guildId) return;
 
     const streamerSubs = getGuildSubscriptions(guildId);
     const categorySubs = getGuildCategorySubscriptions(guildId);
@@ -51,8 +45,8 @@ export const command: Command = {
       const streamerText = streamerSubs
         .map(
           (sub) =>
-            `**${sub.streamer_name}** -> <#${sub.channel_id}>\n> 📝 Wiadomość: ${
-              sub.custom_message ? `\`${sub.custom_message}\`` : "*Domyślna*"
+            `**${sub.streamer_name}** -> <#${sub.channel_id}>\n> 📝 Message: ${
+              sub.custom_message ? `\`${sub.custom_message}\`` : "*Default*"
             }`,
         )
         .join("\n\n");
@@ -70,8 +64,8 @@ export const command: Command = {
       const categoryText = categorySubs
         .map(
           (sub) =>
-            `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>\n> 📝 Wiadomość: ${
-              sub.custom_message ? `\`${sub.custom_message}\`` : "*Domyślna*"
+            `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>\n> 📝 Message: ${
+              sub.custom_message ? `\`${sub.custom_message}\`` : "*Default*"
             }`,
         )
         .join("\n\n");

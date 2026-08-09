@@ -1,5 +1,6 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
 import type { Command } from "../types";
+import { requireGuildId } from "../utils/discord";
 import { addBlacklist } from "../database/repositories/blacklist";
 
 export const command: Command = {
@@ -18,15 +19,9 @@ export const command: Command = {
 
   async execute(interaction) {
     const username = interaction.options.getString("username")!.toLowerCase();
-    const guildId = interaction.guildId;
 
-    if (!guildId) {
-      await interaction.reply({
-        content: "This command can only be used in a server.",
-        ephemeral: true,
-      });
-      return;
-    }
+    const guildId = await requireGuildId(interaction);
+    if (!guildId) return;
 
     addBlacklist(guildId, username);
 

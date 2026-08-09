@@ -4,12 +4,12 @@ import {
   ChannelType,
 } from "discord.js";
 import type { Command } from "../types";
-import { addSubscription } from "../database/repositories/subscriptions";
-import { addCategorySubscription } from "../database/repositories/categorySubscriptions";
-import { addLoLSubscription } from "../database/repositories/lolSubscriptions";
-import { getTwitchCategoryId } from "../twitch/api";
-import { subscribeToStreamer } from "../twitch/eventsub";
-import { getPuuidByRiotId } from "../riot/api";
+import { requireGuildId } from "../utils/discord";
+import {
+  addCategorySubscription,
+  addStreamerSubscription,
+} from "../services/twitchSubscriptions";
+import { addLoLSubscription } from "../services/lolSubscriptions";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
@@ -102,16 +102,10 @@ export const command: Command = {
 
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
-    const guildId = interaction.guildId;
     const channel = interaction.options.getChannel("channel", true);
 
-    if (!guildId) {
-      await interaction.reply({
-        content: "This command can only be used in a server.",
-        ephemeral: true,
-      });
-      return;
-    }
+    const guildId = await requireGuildId(interaction);
+    if (!guildId) return;
 
     if (subcommand === "streamer") {
       const username = interaction.options
@@ -119,8 +113,7 @@ export const command: Command = {
         .toLowerCase();
       const message = interaction.options.getString("message");
 
-      addSubscription(guildId, channel.id, username, message);
-      await subscribeToStreamer(username);
+      await addStreamerSubscription(guildId, channel.id, username, message);
 
       await interaction.reply(
         `✅ Now tracking streamer **${username}** in <#${channel.id}>.`,
@@ -135,23 +128,19 @@ export const command: Command = {
         .getString("language", true)
         .toLowerCase();
       const message = interaction.options.getString("message");
-      const categoryId = await getTwitchCategoryId(categoryName);
 
-      if (!categoryId) {
-        await interaction.editReply(
-          `❌ Could not find category **${categoryName}**.`,
-        );
-        return;
-      }
-
-      addCategorySubscription(
+      const result = await addCategorySubscription(
         guildId,
         channel.id,
-        categoryId,
         categoryName,
         language,
         message,
       );
+
+      if (!result.ok) {
+        await interaction.editReply(`❌ ${result.error}`);
+        return;
+      }
 
       await interaction.editReply(
         `✅ Now tracking category **${categoryName}** (${language}) in <#${channel.id}>.`,
@@ -162,49 +151,21 @@ export const command: Command = {
       await interaction.deferReply();
       const riotIdInput = interaction.options.getString("riotid", true);
       const region = interaction.options.getString("region", true);
-      const channel = interaction.options.getChannel("channel", true);
 
-      if (!riotIdInput.includes("#")) {
-        await interaction.editReply(
-          "❌ Invalid Riot ID format. Please use Name#Tag format.",
-        );
-        return;
-      }
-
-      const [gameName, tagLine] = riotIdInput.split("#");
-
-      if (!gameName || !tagLine) {
-        await interaction.editReply(
-          "❌ Invalid Riot ID format. Please ensure there is text before and after the #.",
-        );
-        return;
-      }
-
-      // Potrzebujemy "regional" (europe, americas) aby pobrać PUUID
-      const regionalRouting = region === "na" ? "americas" : "europe";
-      const playerData = await getPuuidByRiotId(
-        gameName,
-        tagLine,
-        regionalRouting,
-      );
-
-      if (!playerData || !playerData.puuid) {
-        await interaction.editReply(
-          `❌ Could not find player **${riotIdInput}** on ${region.toUpperCase()}.`,
-        );
-        return;
-      }
-
-      addLoLSubscription(
+      const result = await addLoLSubscription(
         guildId,
         channel.id,
-        playerData.puuid,
         riotIdInput,
         region,
       );
 
+      if (!result.ok) {
+        await interaction.editReply(`❌ ${result.error}`);
+        return;
+      }
+
       await interaction.editReply(
-        `✅ Now tracking League of Legends matches for **${riotIdInput}** (${region.toUpperCase()}) in <#${channel.id}>.`,
+        `✅ Now tracking League of Legends matches for **${result.riotId}** (${result.region.toUpperCase()}) in <#${channel.id}>.`,
       );
     }
   },

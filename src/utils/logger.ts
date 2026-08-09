@@ -1,7 +1,7 @@
 import { createLogger, format, transports } from "winston";
 import { existsSync, mkdirSync } from "node:fs";
 
-const logDir = "./logs";
+const logDir = process.env.LOG_DIR || "./logs";
 if (!existsSync(logDir)) {
   mkdirSync(logDir, { recursive: true });
 }

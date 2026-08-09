@@ -4,20 +4,15 @@ import {
   AutocompleteInteraction,
 } from "discord.js";
 import type { Command } from "../types";
-import {
-  removeSubscription,
-  getGuildSubscriptions,
-  getSubscriptionsForStreamer,
-} from "../database/repositories/subscriptions";
+import { requireGuildId } from "../utils/discord";
+import { getGuildSubscriptions } from "../database/repositories/subscriptions";
 import {
   getGuildCategorySubscriptions,
   removeCategorySubscription,
 } from "../database/repositories/categorySubscriptions";
-import { unsubscribeFromStreamerEvents } from "../twitch/api";
-import {
-  getGuildLoLSubscriptions,
-  removeLoLSubscription,
-} from "../database/repositories/lolSubscriptions";
+import { getGuildLoLSubscriptions } from "../database/repositories/lolSubscriptions";
+import { removeStreamerSubscription } from "../services/twitchSubscriptions";
+import { removeLoLSubscription } from "../services/lolSubscriptions";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
@@ -98,7 +93,7 @@ export const command: Command = {
       await interaction.respond(
         filtered.slice(0, 25).map((sub) => ({
           name: `${sub.riot_id} (${sub.region.toUpperCase()})`,
-          value: sub.puuid, // Przekazujemy PUUID jako ukrytą wartość do łatwego usunięcia
+          value: sub.puuid, // Hidden autocomplete value used to identify the row on removal
         })),
       );
     }
@@ -106,27 +101,16 @@ export const command: Command = {
 
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
-    const guildId = interaction.guildId;
 
-    if (!guildId) {
-      await interaction.reply({
-        content: "This command can only be used in a server.",
-        ephemeral: true,
-      });
-      return;
-    }
+    const guildId = await requireGuildId(interaction);
+    if (!guildId) return;
 
     if (subcommand === "streamer") {
       const username = interaction.options
         .getString("username", true)
         .toLowerCase();
 
-      removeSubscription(guildId, username);
-      const remainingSubs = getSubscriptionsForStreamer(username);
-
-      if (remainingSubs.length === 0) {
-        await unsubscribeFromStreamerEvents(username);
-      }
+      await removeStreamerSubscription(guildId, username);
 
       await interaction.reply(
         `✅ Stopped monitoring streamer **${username}** on this server.`,
@@ -154,21 +138,17 @@ export const command: Command = {
     if (subcommand === "lol") {
       const puuid = interaction.options.getString("riotid", true);
 
-      const subs = getGuildLoLSubscriptions(guildId);
-      const subToRemove = subs.find((s) => s.puuid === puuid);
-
-      if (!subToRemove) {
+      const result = removeLoLSubscription(guildId, puuid);
+      if (!result.ok) {
         await interaction.reply({
-          content:
-            "❌ Could not find this subscription. Please use the autocomplete menu.",
+          content: `❌ ${result.error}`,
           ephemeral: true,
         });
         return;
       }
 
-      removeLoLSubscription(guildId, puuid);
       await interaction.reply(
-        `✅ Stopped monitoring League of Legends matches for **${subToRemove.riot_id}** on this server.`,
+        `✅ Stopped monitoring League of Legends matches for **${result.riotId}** on this server.`,
       );
     }
   },

@@ -1,7 +1,8 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync, existsSync } from "node:fs";
+import { env } from "../config";
 
-const dbDir = "./db";
+const dbDir = env.DB_PATH;
 if (!existsSync(dbDir)) {
   mkdirSync(dbDir, { recursive: true });
 }

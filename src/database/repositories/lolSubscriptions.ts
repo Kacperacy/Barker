@@ -1,4 +1,5 @@
 import { db } from "../connection";
+import { computeStreak, type StreakMatch } from "../../riot/rank";
 
 export interface LoLSubscription {
   guild_id: string;
@@ -68,18 +69,6 @@ export const getSubscriptionsForLoLPlayer = (
     .all(puuid) as LoLSubscription[];
 };
 
-export const updateLastMatch = (
-  puuid: string,
-  matchId: string,
-  tier: string | null,
-  rank: string | null,
-  lp: number | null,
-) => {
-  db.query(
-    `INSERT OR REPLACE INTO lol_last_matches (puuid, match_id, tier, rank, league_points) VALUES (?1, ?2, ?3, ?4, ?5)`,
-  ).run(puuid, matchId, tier, rank, lp);
-};
-
 export const getLastMatch = (
   puuid: string,
 ): {
@@ -96,23 +85,51 @@ export const getLastMatch = (
   return res ? res : null;
 };
 
-export const saveLoLPlayerMatch = (match: LoLPlayerMatch) => {
-  db.query(
-    `INSERT OR IGNORE INTO lol_player_matches (puuid, match_id, kills, deaths, assists, win, duration, is_remake, timestamp, lp_change, raw_json)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
-  ).run(
-    match.puuid,
-    match.match_id,
-    match.kills,
-    match.deaths,
-    match.assists,
-    match.win,
-    match.duration,
-    match.is_remake,
-    match.timestamp,
-    match.lp_change,
-    match.raw_json,
-  );
+export interface LastMatchUpdate {
+  puuid: string;
+  matchId: string;
+  tier: string | null;
+  rank: string | null;
+  leaguePoints: number | null;
+}
+
+// Atomic so a crash mid-write can't desync lol_player_matches from lol_last_matches.
+export const saveMatchAndUpdateLastMatch = (
+  match: LoLPlayerMatch | null,
+  lastMatch: LastMatchUpdate,
+) => {
+  const run = db.transaction(() => {
+    if (match) {
+      db.query(
+        `INSERT OR IGNORE INTO lol_player_matches (puuid, match_id, kills, deaths, assists, win, duration, is_remake, timestamp, lp_change, raw_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+      ).run(
+        match.puuid,
+        match.match_id,
+        match.kills,
+        match.deaths,
+        match.assists,
+        match.win,
+        match.duration,
+        match.is_remake,
+        match.timestamp,
+        match.lp_change,
+        match.raw_json,
+      );
+    }
+
+    db.query(
+      `INSERT OR REPLACE INTO lol_last_matches (puuid, match_id, tier, rank, league_points) VALUES (?1, ?2, ?3, ?4, ?5)`,
+    ).run(
+      lastMatch.puuid,
+      lastMatch.matchId,
+      lastMatch.tier,
+      lastMatch.rank,
+      lastMatch.leaguePoints,
+    );
+  });
+
+  run();
 };
 
 export const getPlayerMatchesSince = (
@@ -131,26 +148,9 @@ export const getPlayerStreak = (puuid: string): string => {
     .query(
       "SELECT win, is_remake FROM lol_player_matches WHERE puuid = ?1 ORDER BY timestamp DESC LIMIT 50",
     )
-    .all(puuid) as { win: number; is_remake: number }[];
+    .all(puuid) as StreakMatch[];
 
-  let streakType: "W" | "L" | null = null;
-  let count = 0;
-
-  for (const match of matches) {
-    if (match.is_remake === 1) continue;
-    const currentType = match.win === 1 ? "W" : "L";
-
-    if (streakType === null) {
-      streakType = currentType;
-      count = 1;
-    } else if (streakType === currentType) {
-      count++;
-    } else {
-      break;
-    }
-  }
-
-  return count > 0 ? `${count}${streakType}` : "None";
+  return computeStreak(matches);
 };
 
 export const getAllLoLChannels = (): { channel_id: string }[] => {

@@ -3,15 +3,7 @@ import { logger } from "../utils/logger";
 import { twitchEvents } from "./eventsub";
 import { getStreamData } from "./api";
 import { getSubscriptionsForStreamer } from "../database/repositories/subscriptions";
-import {
-  saveActiveMessage,
-  getActiveMessages,
-  clearActiveMessages,
-} from "../database/repositories/activeMessages";
-import {
-  sendStreamNotification,
-  editMessageToOffline,
-} from "../discord/notifier";
+import { announceIfNewlyLive, retireLiveAnnouncements } from "../discord/liveTracking";
 
 export function setupTwitchHandlers(client: Client) {
   twitchEvents.on("streamOnline", async (eventData) => {
@@ -26,16 +18,20 @@ export function setupTwitchHandlers(client: Client) {
       if (subs.length === 0) return;
 
       for (const sub of subs) {
-        const messageId = await sendStreamNotification(
+        const announced = await announceIfNewlyLive({
           client,
-          sub.channel_id,
+          guildId: sub.guild_id,
+          channelId: sub.channel_id,
+          streamerLogin: login,
           stream,
-          sub.custom_message,
-          `@everyone Hey! **{streamer}** just went live!`,
-        );
+          customMessage: sub.custom_message,
+          defaultTemplate: `@everyone Hey! **{streamer}** just went live!`,
+        });
 
-        if (messageId) {
-          saveActiveMessage(login, sub.channel_id, messageId);
+        if (!announced) {
+          logger.info(
+            `[EventSub] Skipped duplicate live announcement for ${login} in channel ${sub.channel_id}`,
+          );
         }
       }
     }, 5000);
@@ -45,19 +41,10 @@ export function setupTwitchHandlers(client: Client) {
     const login = eventData.broadcaster_user_login.toLowerCase();
     logger.info(`EVENT TRIGGERED: ${login} went offline!`);
 
-    const activeMessages = getActiveMessages(login);
-    if (activeMessages.length === 0) return;
-
-    for (const msgData of activeMessages) {
-      await editMessageToOffline(
-        client,
-        msgData.channel_id,
-        msgData.message_id,
-        eventData.broadcaster_user_name,
-        login,
-      );
-    }
-
-    clearActiveMessages(login);
+    await retireLiveAnnouncements({
+      client,
+      streamerLogin: login,
+      broadcasterName: eventData.broadcaster_user_name,
+    });
   });
 }

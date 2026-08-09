@@ -11,17 +11,44 @@ import { closeEventSub } from "./twitch/eventsub";
 import { deployCommands } from "./utils/deploy-commands";
 import type { Command } from "./types";
 
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+async function shutdown(signal: string, exitCode: number): Promise<never> {
+  logger.info(`Received ${signal}. Starting graceful shutdown...`);
+
+  try {
+    closeEventSub();
+
+    if (client.isReady()) {
+      logger.info("Destroying Discord client...");
+      await client.destroy();
+    }
+
+    logger.info("Closing database connection...");
+    db.close();
+
+    logger.info("Shutdown complete. Exiting process.");
+  } catch (error) {
+    logger.error("Error occurred during graceful shutdown:", error);
+  }
+
+  process.exit(exitCode);
+}
+
 process.on("unhandledRejection", (reason, promise) => {
   logger.error("CRITICAL: Unhandled Rejection at:", promise, "reason:", reason);
+  void shutdown("unhandledRejection", 1);
 });
 
 process.on("uncaughtException", (error) => {
   logger.error("CRITICAL: Uncaught Exception:", error);
+  void shutdown("uncaughtException", 1);
 });
 
-runMigrations();
+process.on("SIGINT", () => shutdown("SIGINT", 0));
+process.on("SIGTERM", () => shutdown("SIGTERM", 0));
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+runMigrations();
 
 const commands = new Map<string, Command>();
 const commandsPath = join(__dirname, "commands");
@@ -43,28 +70,3 @@ ready(client);
 interactionCreate(client, commands);
 
 client.login(env.DISCORD_TOKEN);
-
-const gracefulShutdown = async (signal: string) => {
-  logger.info(`Received ${signal}. Starting graceful shutdown...`);
-
-  try {
-    closeEventSub();
-
-    if (client.isReady()) {
-      logger.info("Destroying Discord client...");
-      await client.destroy();
-    }
-
-    logger.info("Closing database connection...");
-    db.close();
-
-    logger.info("Shutdown complete. Exiting process.");
-    process.exit(0);
-  } catch (error) {
-    logger.error("Error occurred during graceful shutdown:", error);
-    process.exit(1);
-  }
-};
-
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

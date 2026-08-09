@@ -4,6 +4,7 @@ import {
   AutocompleteInteraction,
 } from "discord.js";
 import type { Command } from "../types";
+import { requireGuildId } from "../utils/discord";
 import {
   removeBlacklist,
   getGuildBlacklist,
@@ -42,15 +43,9 @@ export const command: Command = {
 
   async execute(interaction) {
     const username = interaction.options.getString("username")!.toLowerCase();
-    const guildId = interaction.guildId;
 
-    if (!guildId) {
-      await interaction.reply({
-        content: "This command can only be used in a server.",
-        ephemeral: true,
-      });
-      return;
-    }
+    const guildId = await requireGuildId(interaction);
+    if (!guildId) return;
 
     removeBlacklist(guildId, username);
 

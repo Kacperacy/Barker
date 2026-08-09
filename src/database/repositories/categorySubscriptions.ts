@@ -71,32 +71,3 @@ export const updateCategorySubscriptionMessage = (
     "UPDATE category_subscriptions SET custom_message = ?1 WHERE guild_id = ?2 AND category_name = ?3 AND language = ?4",
   ).run(customMessage, guildId, categoryName, language);
 };
-
-export const addNotifiedUser = (userId: string, categoryId: string) => {
-  db.query(
-    `INSERT OR IGNORE INTO category_notified (user_id, category_id) VALUES (?1, ?2)`,
-  ).run(userId, categoryId);
-};
-
-export const isUserNotified = (userId: string, categoryId: string): boolean => {
-  const res = db
-    .query(
-      "SELECT 1 FROM category_notified WHERE user_id = ?1 AND category_id = ?2",
-    )
-    .get(userId, categoryId);
-  return !!res;
-};
-
-export const getNotifiedUsersForCategory = (
-  categoryId: string,
-): { user_id: string }[] => {
-  return db
-    .query("SELECT user_id FROM category_notified WHERE category_id = ?1")
-    .all(categoryId) as { user_id: string }[];
-};
-
-export const removeNotifiedUser = (userId: string, categoryId: string) => {
-  db.query(
-    "DELETE FROM category_notified WHERE user_id = ?1 AND category_id = ?2",
-  ).run(userId, categoryId);
-};
