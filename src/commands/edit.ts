@@ -4,13 +4,11 @@ import {
   AutocompleteInteraction,
 } from "discord.js";
 import type { Command } from "../types";
-import { requireGuildId } from "../utils/discord";
+import { addPlatformOption, getPlatformOption, requireGuildId } from "../utils/discord";
 import { getGuildSubscriptions } from "../database/repositories/subscriptions";
 import { getGuildCategorySubscriptions } from "../database/repositories/categorySubscriptions";
-import {
-  updateCategoryMessage,
-  updateStreamerMessage,
-} from "../services/twitchSubscriptions";
+import * as twitchSubscriptions from "../services/twitchSubscriptions";
+import * as kickSubscriptions from "../services/kickSubscriptions";
 
 export const command: Command = {
   data: new SlashCommandBuilder()
@@ -22,7 +20,7 @@ export const command: Command = {
     .addSubcommand((sub) =>
       sub
         .setName("streamer")
-        .setDescription("Edit the message for a specific Twitch streamer")
+        .setDescription("Edit the message for a specific streamer")
         .addStringOption((opt) =>
           opt
             .setName("username")
@@ -35,12 +33,13 @@ export const command: Command = {
             .setName("message")
             .setDescription("New custom message. Use {streamer} & {game}")
             .setRequired(true),
-        ),
+        )
+        .addStringOption(addPlatformOption),
     )
     .addSubcommand((sub) =>
       sub
         .setName("category")
-        .setDescription("Edit the message for a specific Twitch category")
+        .setDescription("Edit the message for a specific category")
         .addStringOption((opt) =>
           opt
             .setName("category")
@@ -53,7 +52,8 @@ export const command: Command = {
             .setName("message")
             .setDescription("New custom message. Use {streamer} & {game}")
             .setRequired(true),
-        ),
+        )
+        .addStringOption(addPlatformOption),
     ),
 
   async autocomplete(interaction: AutocompleteInteraction) {
@@ -62,11 +62,14 @@ export const command: Command = {
 
     const focusedValue = interaction.options.getFocused().toLowerCase();
     const subcommand = interaction.options.getSubcommand();
+    const platform = getPlatformOption(interaction);
 
     if (subcommand === "streamer") {
       const subs = getGuildSubscriptions(guildId);
-      const filtered = subs.filter((sub) =>
-        sub.streamer_name.startsWith(focusedValue),
+      const filtered = subs.filter(
+        (sub) =>
+          sub.platform === platform &&
+          sub.streamer_name.startsWith(focusedValue),
       );
       await interaction.respond(
         filtered
@@ -78,8 +81,10 @@ export const command: Command = {
       );
     } else if (subcommand === "category") {
       const subs = getGuildCategorySubscriptions(guildId);
-      const filtered = subs.filter((sub) =>
-        sub.category_name.toLowerCase().includes(focusedValue),
+      const filtered = subs.filter(
+        (sub) =>
+          sub.platform === platform &&
+          sub.category_name.toLowerCase().includes(focusedValue),
       );
       await interaction.respond(
         filtered.slice(0, 25).map((sub) => ({
@@ -97,13 +102,16 @@ export const command: Command = {
     if (!guildId) return;
 
     const newMessage = interaction.options.getString("message", true);
+    const platform = getPlatformOption(interaction);
+    const service =
+      platform === "kick" ? kickSubscriptions : twitchSubscriptions;
 
     if (subcommand === "streamer") {
       const username = interaction.options
         .getString("username", true)
         .toLowerCase();
 
-      updateStreamerMessage(guildId, username, newMessage);
+      service.updateStreamerMessage(guildId, username, newMessage);
       await interaction.reply(
         `✅ Updated custom message for streamer **${username}**.`,
       );
@@ -121,7 +129,7 @@ export const command: Command = {
         return;
       }
 
-      updateCategoryMessage(guildId, categoryName, language, newMessage);
+      service.updateCategoryMessage(guildId, categoryName, language, newMessage);
       await interaction.reply(
         `✅ Updated custom message for category **${categoryName}** (${language}).`,
       );

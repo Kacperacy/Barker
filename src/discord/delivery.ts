@@ -1,12 +1,22 @@
 import { Client, TextChannel, EmbedBuilder } from "discord.js";
+import type { Platform } from "../types";
 import { logger } from "../utils/logger";
 import { queueDiscordAction } from "../utils/queue";
-import { buildLiveEmbed, buildOfflineEmbed, formatNotificationText } from "./embeds";
+import {
+  buildKickLiveEmbed,
+  buildKickOfflineEmbed,
+  buildLiveEmbed,
+  buildOfflineEmbed,
+  formatNotificationText,
+} from "./embeds";
 
 export async function sendStreamNotification(
   client: Client,
   channelId: string,
+  platform: Platform,
   stream: any,
+  streamerName: string,
+  categoryName: string | undefined,
   customMessage: string | null | undefined,
   defaultTemplate: string,
 ): Promise<string | null> {
@@ -18,10 +28,11 @@ export async function sendStreamNotification(
       const templateToUse = customMessage || defaultTemplate;
       const textContent = formatNotificationText(
         templateToUse,
-        stream.user_name,
-        stream.game_name,
+        streamerName,
+        categoryName ?? "",
       );
-      const embed = buildLiveEmbed(stream);
+      const embed =
+        platform === "kick" ? buildKickLiveEmbed(stream) : buildLiveEmbed(stream);
 
       const sentMessage = await channel.send({
         content: textContent,
@@ -39,6 +50,7 @@ export async function editMessageToOffline(
   client: Client,
   channelId: string,
   messageId: string,
+  platform: Platform,
   broadcasterName: string,
   login: string,
 ): Promise<void> {
@@ -50,7 +62,10 @@ export async function editMessageToOffline(
       const messageToEdit = await channel.messages.fetch(messageId);
       if (!messageToEdit) return;
 
-      const embedOffline = buildOfflineEmbed(broadcasterName, login);
+      const embedOffline =
+        platform === "kick"
+          ? buildKickOfflineEmbed(broadcasterName, login)
+          : buildOfflineEmbed(broadcasterName, login);
 
       await messageToEdit.edit({
         content: `~~${broadcasterName}~~ (Offline)`,

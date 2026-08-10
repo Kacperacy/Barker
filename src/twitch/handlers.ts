@@ -14,7 +14,7 @@ export function setupTwitchHandlers(client: Client) {
       const stream = await getStreamData(login);
       if (!stream) return;
 
-      const subs = getSubscriptionsForStreamer(login);
+      const subs = getSubscriptionsForStreamer(login, "twitch");
       if (subs.length === 0) return;
 
       for (const sub of subs) {
@@ -22,7 +22,10 @@ export function setupTwitchHandlers(client: Client) {
           client,
           guildId: sub.guild_id,
           channelId: sub.channel_id,
+          platform: "twitch",
           streamerLogin: login,
+          streamerName: stream.user_name,
+          categoryName: stream.game_name,
           stream,
           customMessage: sub.custom_message,
           defaultTemplate: `@everyone Hey! **{streamer}** just went live!`,
@@ -43,6 +46,7 @@ export function setupTwitchHandlers(client: Client) {
 
     await retireLiveAnnouncements({
       client,
+      platform: "twitch",
       streamerLogin: login,
       broadcasterName: eventData.broadcaster_user_name,
     });

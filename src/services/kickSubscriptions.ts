@@ -1,12 +1,6 @@
-import {
-  getTwitchCategoryId,
-  getTwitchUserId,
-  unsubscribeFromStreamerEvents,
-} from "../twitch/api";
-import { subscribeToStreamer } from "../twitch/eventsub";
+import { getKickBroadcasterId, getKickCategoryId } from "../kick/api";
 import {
   addSubscription,
-  getSubscriptionsForStreamer,
   removeSubscription,
   updateSubscriptionMessage,
 } from "../database/repositories/subscriptions";
@@ -22,32 +16,26 @@ export type AddStreamerSubscriptionResult =
 export async function addStreamerSubscription(
   guildId: string,
   channelId: string,
-  username: string,
+  slug: string,
   customMessage: string | null,
 ): Promise<AddStreamerSubscriptionResult> {
-  const userId = await getTwitchUserId(username);
-  if (!userId) {
-    return {
-      ok: false,
-      error: `Could not find Twitch streamer **${username}**.`,
-    };
+  const broadcasterId = await getKickBroadcasterId(slug);
+  if (!broadcasterId) {
+    return { ok: false, error: `Could not find Kick streamer **${slug}**.` };
   }
 
-  addSubscription(guildId, channelId, username, customMessage, "twitch");
-  await subscribeToStreamer(username);
+  addSubscription(guildId, channelId, slug, customMessage, "kick");
   return { ok: true };
 }
 
-export async function removeStreamerSubscription(
+// No EventSub-equivalent to unsubscribe from — kick/streamerPolling.ts reads
+// tracked subscriptions directly on every poll, so removing the row here is
+// the entire operation.
+export function removeStreamerSubscription(
   guildId: string,
-  username: string,
-): Promise<void> {
-  removeSubscription(guildId, username, "twitch");
-
-  const remainingSubs = getSubscriptionsForStreamer(username, "twitch");
-  if (remainingSubs.length === 0) {
-    await unsubscribeFromStreamerEvents(username);
-  }
+  slug: string,
+): void {
+  removeSubscription(guildId, slug, "kick");
 }
 
 export type AddCategorySubscriptionResult =
@@ -61,29 +49,29 @@ export async function addCategorySubscription(
   language: string,
   customMessage: string | null,
 ): Promise<AddCategorySubscriptionResult> {
-  const categoryId = await getTwitchCategoryId(categoryName);
-  if (!categoryId) {
+  const category = await getKickCategoryId(categoryName);
+  if (!category) {
     return { ok: false, error: `Could not find category **${categoryName}**.` };
   }
 
   addCategorySubscriptionRow(
     guildId,
     channelId,
-    categoryId,
-    categoryName,
+    category.id,
+    category.name,
     language,
     customMessage,
-    "twitch",
+    "kick",
   );
-  return { ok: true, categoryId };
+  return { ok: true, categoryId: category.id };
 }
 
 export function updateStreamerMessage(
   guildId: string,
-  username: string,
+  slug: string,
   customMessage: string,
 ): void {
-  updateSubscriptionMessage(guildId, username, customMessage, "twitch");
+  updateSubscriptionMessage(guildId, slug, customMessage, "kick");
 }
 
 export function updateCategoryMessage(
@@ -97,6 +85,6 @@ export function updateCategoryMessage(
     categoryName,
     language,
     customMessage,
-    "twitch",
+    "kick",
   );
 }

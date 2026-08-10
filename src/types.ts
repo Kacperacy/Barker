@@ -4,6 +4,8 @@ import {
   AutocompleteInteraction,
 } from "discord.js";
 
+export type Platform = "twitch" | "kick";
+
 export interface Command {
   data: SlashCommandBuilder | any;
   execute: (interaction: ChatInputCommandInteraction) => Promise<void>;

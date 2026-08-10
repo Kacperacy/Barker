@@ -3,6 +3,9 @@ import { isRemake } from "../riot/rank";
 
 const TWITCH_AUTHOR_ICON_URL =
   "https://cdn-icons-png.flaticon.com/512/5968/5968819.png";
+const KICK_AUTHOR_ICON_URL =
+  "https://cdn-icons-png.flaticon.com/512/12222/12222586.png";
+const KICK_BRAND_COLOR = 0x53fc18;
 
 export function buildLiveEmbed(stream: any): EmbedBuilder {
   return new EmbedBuilder()
@@ -41,6 +44,45 @@ export function buildOfflineEmbed(
     })
     .setTitle("Stream has ended")
     .setURL(`https://twitch.tv/${login}`)
+    .setDescription("Catch them next time!")
+    .setTimestamp();
+}
+
+export function buildKickLiveEmbed(stream: any): EmbedBuilder {
+  return new EmbedBuilder()
+    .setColor(KICK_BRAND_COLOR)
+    .setTitle(stream.title)
+    .setURL(`https://kick.com/${stream.channel.slug}`)
+    .setAuthor({
+      name: `${stream.broadcaster_user.username} is live in ${stream.category?.name || "a category"}!`,
+      iconURL: KICK_AUTHOR_ICON_URL,
+    })
+    .addFields(
+      {
+        name: "Language",
+        value: stream.language_code
+          ? stream.language_code.toUpperCase()
+          : "N/A",
+        inline: true,
+      },
+      { name: "Viewers", value: stream.viewer_count.toString(), inline: true },
+    )
+    .setImage(stream.thumbnail || null)
+    .setTimestamp();
+}
+
+export function buildKickOfflineEmbed(
+  broadcasterName: string,
+  slug: string,
+): EmbedBuilder {
+  return new EmbedBuilder()
+    .setColor(0x808080)
+    .setAuthor({
+      name: `${broadcasterName} was live`,
+      iconURL: KICK_AUTHOR_ICON_URL,
+    })
+    .setTitle("Stream has ended")
+    .setURL(`https://kick.com/${slug}`)
     .setDescription("Catch them next time!")
     .setTimestamp();
 }

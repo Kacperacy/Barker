@@ -1,7 +1,7 @@
 import { Client } from "discord.js";
 import { logger } from "../utils/logger";
 import { env } from "../config";
-import { getStreamsByCategory } from "./api";
+import { getKickStreamsByCategory } from "./api";
 import {
   getAllUniqueCategoryFilters,
   getGuildsForCategoryFilter,
@@ -13,52 +13,53 @@ import {
   clearStrikes,
   incrementStrikes,
 } from "../database/repositories/categoryStrikes";
-import { announceIfNewlyLive, retireLiveAnnouncements } from "../discord/liveTracking";
+import {
+  announceIfNewlyLive,
+  retireLiveAnnouncements,
+} from "../discord/liveTracking";
 
 let isPolling = false;
 
-export function startCategoryPolling(client: Client) {
+export function startKickCategoryPolling(client: Client) {
   setInterval(async () => {
     if (isPolling) return;
     isPolling = true;
 
     try {
-      const filters = getAllUniqueCategoryFilters("twitch");
+      const filters = getAllUniqueCategoryFilters("kick");
 
       for (const filter of filters) {
-        const streams = await getStreamsByCategory(
+        const streams = await getKickStreamsByCategory(
           filter.category_id,
           filter.language,
         );
         const liveLogins = new Set(
-          streams.map((s) => s.user_login.toLowerCase()),
+          streams.map((s) => s.channel.slug.toLowerCase()),
         );
 
         for (const stream of streams) {
-          const streamerLogin = stream.user_login.toLowerCase();
-          clearStrikes(filter.category_id, streamerLogin, "twitch");
+          const streamerLogin = stream.channel.slug.toLowerCase();
+          clearStrikes(filter.category_id, streamerLogin, "kick");
 
           const subs = getGuildsForCategoryFilter(
             filter.category_id,
             filter.language,
-            "twitch",
+            "kick",
           );
 
           for (const sub of subs) {
             if (
-              hasIndividualSubscription(sub.guild_id, streamerLogin, "twitch")
+              hasIndividualSubscription(sub.guild_id, streamerLogin, "kick")
             ) {
               logger.info(
-                `[Category Polling] Skipping ${streamerLogin} for guild ${sub.guild_id} (Individual sub exists)`,
+                `[Kick Category Polling] Skipping ${streamerLogin} for guild ${sub.guild_id} (Individual sub exists)`,
               );
               continue;
             }
 
-            if (
-              isStreamerBlacklisted(sub.guild_id, streamerLogin, "twitch")
-            ) {
+            if (isStreamerBlacklisted(sub.guild_id, streamerLogin, "kick")) {
               logger.info(
-                `[Category Polling] Skipping ${streamerLogin} for guild ${sub.guild_id} (Blacklisted)`,
+                `[Kick Category Polling] Skipping ${streamerLogin} for guild ${sub.guild_id} (Blacklisted)`,
               );
               continue;
             }
@@ -67,11 +68,11 @@ export function startCategoryPolling(client: Client) {
               client,
               guildId: sub.guild_id,
               channelId: sub.channel_id,
-              platform: "twitch",
+              platform: "kick",
               streamerLogin,
-              streamerName: stream.user_name,
+              streamerName: stream.broadcaster_user.username,
               categoryId: filter.category_id,
-              categoryName: stream.game_name,
+              categoryName: stream.category.name,
               stream,
               customMessage: sub.custom_message,
               defaultTemplate: `@everyone A wild developer appeared! **{streamer}** is live in **{game}**!`,
@@ -79,7 +80,7 @@ export function startCategoryPolling(client: Client) {
 
             if (announced) {
               logger.info(
-                `[Category Polling] Notification sent for ${streamerLogin} to channel ${sub.channel_id}`,
+                `[Kick Category Polling] Notification sent for ${streamerLogin} to channel ${sub.channel_id}`,
               );
             }
           }
@@ -87,7 +88,7 @@ export function startCategoryPolling(client: Client) {
 
         const previouslyNotifiedLogins = getNotifiedStreamerLoginsForCategory(
           filter.category_id,
-          "twitch",
+          "kick",
         );
 
         for (const streamerLogin of previouslyNotifiedLogins) {
@@ -96,29 +97,29 @@ export function startCategoryPolling(client: Client) {
           const currentStrikes = incrementStrikes(
             filter.category_id,
             streamerLogin,
-            "twitch",
+            "kick",
           );
 
           if (currentStrikes >= env.CATEGORY_MISSING_STRIKE_MAX) {
             await retireLiveAnnouncements({
               client,
-              platform: "twitch",
+              platform: "kick",
               streamerLogin,
               categoryId: filter.category_id,
             });
-            clearStrikes(filter.category_id, streamerLogin, "twitch");
+            clearStrikes(filter.category_id, streamerLogin, "kick");
             logger.info(
-              `[Category Polling] REMOVED STREAM DETECTED: ${streamerLogin} removed after ${env.CATEGORY_MISSING_STRIKE_MAX} missed polls in category ${filter.category_id}.`,
+              `[Kick Category Polling] REMOVED STREAM DETECTED: ${streamerLogin} removed after ${env.CATEGORY_MISSING_STRIKE_MAX} missed polls in category ${filter.category_id}.`,
             );
           } else {
             logger.info(
-              `[Category Polling] Streamer ${streamerLogin} missing from category ${filter.category_id}. Strike ${currentStrikes}/${env.CATEGORY_MISSING_STRIKE_MAX}.`,
+              `[Kick Category Polling] Streamer ${streamerLogin} missing from category ${filter.category_id}. Strike ${currentStrikes}/${env.CATEGORY_MISSING_STRIKE_MAX}.`,
             );
           }
         }
       }
     } catch (error) {
-      logger.error("Error during category polling:", error);
+      logger.error("Error during Kick category polling:", error);
     } finally {
       isPolling = false;
     }

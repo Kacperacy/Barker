@@ -21,10 +21,11 @@ function saveLiveAnnouncement(
   categoryId: string | null,
   streamerName: string | null,
   messageId: string,
+  platform: string = "twitch",
 ) {
   db.query(
-    `INSERT OR REPLACE INTO live_announcements (guild_id, channel_id, streamer_login, category_id, streamer_name, message_id)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    `INSERT OR REPLACE INTO live_announcements (guild_id, channel_id, streamer_login, category_id, streamer_name, message_id, platform)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   ).run(
     guildId,
     channelId,
@@ -32,6 +33,7 @@ function saveLiveAnnouncement(
     categoryId ?? NO_CATEGORY,
     streamerName,
     messageId,
+    platform,
   );
 }
 
@@ -41,12 +43,13 @@ function getLiveAnnouncement(
   channelId: string,
   streamerLogin: string,
   categoryId: string | null,
+  platform: string = "twitch",
 ) {
   return db
     .query(
-      "SELECT * FROM live_announcements WHERE guild_id = ?1 AND channel_id = ?2 AND streamer_login = ?3 AND category_id = ?4",
+      "SELECT * FROM live_announcements WHERE guild_id = ?1 AND channel_id = ?2 AND streamer_login = ?3 AND category_id = ?4 AND platform = ?5",
     )
-    .get(guildId, channelId, streamerLogin, categoryId ?? NO_CATEGORY);
+    .get(guildId, channelId, streamerLogin, categoryId ?? NO_CATEGORY, platform);
 }
 
 describe("live_announcements schema", () => {
@@ -157,6 +160,87 @@ describe("live_announcements schema", () => {
       getLiveAnnouncement(db, "g1", "c1", "streamer1", "cat1"),
     ).not.toBeNull();
   });
+
+  test("the same streamer login tracked on both platforms produces two independent rows", () => {
+    const db = makeTestDb();
+
+    saveLiveAnnouncement(
+      db,
+      "g1",
+      "c1",
+      "samename",
+      null,
+      "SameName",
+      "twitch-msg",
+      "twitch",
+    );
+    saveLiveAnnouncement(
+      db,
+      "g1",
+      "c1",
+      "samename",
+      null,
+      "SameName",
+      "kick-msg",
+      "kick",
+    );
+
+    const twitchRow = getLiveAnnouncement(
+      db,
+      "g1",
+      "c1",
+      "samename",
+      null,
+      "twitch",
+    ) as any;
+    const kickRow = getLiveAnnouncement(
+      db,
+      "g1",
+      "c1",
+      "samename",
+      null,
+      "kick",
+    ) as any;
+
+    expect(twitchRow.message_id).toBe("twitch-msg");
+    expect(kickRow.message_id).toBe("kick-msg");
+  });
+
+  test("clearing announcements for one platform does not touch the other platform's row", () => {
+    const db = makeTestDb();
+
+    saveLiveAnnouncement(
+      db,
+      "g1",
+      "c1",
+      "samename",
+      null,
+      "SameName",
+      "twitch-msg",
+      "twitch",
+    );
+    saveLiveAnnouncement(
+      db,
+      "g1",
+      "c1",
+      "samename",
+      null,
+      "SameName",
+      "kick-msg",
+      "kick",
+    );
+
+    db.query(
+      "DELETE FROM live_announcements WHERE streamer_login = 'samename' AND category_id = ?1 AND platform = 'twitch'",
+    ).run(NO_CATEGORY);
+
+    expect(
+      getLiveAnnouncement(db, "g1", "c1", "samename", null, "twitch"),
+    ).toBeNull();
+    expect(
+      getLiveAnnouncement(db, "g1", "c1", "samename", null, "kick"),
+    ).not.toBeNull();
+  });
 });
 
 describe("category_streamer_strikes schema", () => {
@@ -164,19 +248,20 @@ describe("category_streamer_strikes schema", () => {
     db: Database,
     categoryId: string,
     streamerLogin: string,
+    platform: string = "twitch",
   ): number {
     db.query(
-      `INSERT INTO category_streamer_strikes (category_id, streamer_login, missing_strikes)
-       VALUES (?1, ?2, 1)
-       ON CONFLICT(category_id, streamer_login)
+      `INSERT INTO category_streamer_strikes (category_id, streamer_login, missing_strikes, platform)
+       VALUES (?1, ?2, 1, ?3)
+       ON CONFLICT(category_id, streamer_login, platform)
        DO UPDATE SET missing_strikes = missing_strikes + 1`,
-    ).run(categoryId, streamerLogin);
+    ).run(categoryId, streamerLogin, platform);
 
     const res = db
       .query(
-        "SELECT missing_strikes FROM category_streamer_strikes WHERE category_id = ?1 AND streamer_login = ?2",
+        "SELECT missing_strikes FROM category_streamer_strikes WHERE category_id = ?1 AND streamer_login = ?2 AND platform = ?3",
       )
-      .get(categoryId, streamerLogin) as { missing_strikes: number };
+      .get(categoryId, streamerLogin, platform) as { missing_strikes: number };
     return res.missing_strikes;
   }
 
@@ -208,6 +293,28 @@ describe("category_streamer_strikes schema", () => {
 
     expect(cat1Strikes.missing_strikes).toBe(2);
     expect(cat2Strikes.missing_strikes).toBe(1);
+  });
+
+  test("strikes are independent per platform, even for the same category+streamer", () => {
+    const db = makeTestDb();
+
+    incrementStrikes(db, "cat1", "samename", "twitch");
+    incrementStrikes(db, "cat1", "samename", "twitch");
+    incrementStrikes(db, "cat1", "samename", "kick");
+
+    const twitchStrikes = db
+      .query(
+        "SELECT missing_strikes FROM category_streamer_strikes WHERE category_id = 'cat1' AND streamer_login = 'samename' AND platform = 'twitch'",
+      )
+      .get() as any;
+    const kickStrikes = db
+      .query(
+        "SELECT missing_strikes FROM category_streamer_strikes WHERE category_id = 'cat1' AND streamer_login = 'samename' AND platform = 'kick'",
+      )
+      .get() as any;
+
+    expect(twitchStrikes.missing_strikes).toBe(2);
+    expect(kickStrikes.missing_strikes).toBe(1);
   });
 
   test("clearing strikes removes the row entirely", () => {

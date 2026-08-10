@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { runMigrations } from "./index";
 import migration0001 from "./0001_initial";
+import migration0002 from "./0002_lol_player_matches_lp_change";
+import migration0003 from "./0003_unify_live_tracking";
 
 function tableNames(db: Database): string[] {
   return (
@@ -42,7 +44,7 @@ describe("runMigrations", () => {
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as { version: number }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
   });
 
   test("migration 0002 adds lp_change to lol_player_matches", () => {
@@ -78,6 +80,78 @@ describe("runMigrations", () => {
     expect(tableNames(db)).not.toContain("category_notified");
     expect(tableNames(db)).toContain("live_announcements");
     expect(tableNames(db)).toContain("category_streamer_strikes");
+  });
+
+  test("migration 0004 adds platform to all five tables, preserving existing rows as 'twitch'", () => {
+    const db = new Database(":memory:");
+    // Simulate a database that already went through migrations 1-3 in
+    // production (real schema, via the actual migrations), with real rows
+    // in every table migration 4 touches.
+    migration0001.up(db);
+    migration0002.up(db);
+    migration0003.up(db);
+    db.query(
+      `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`,
+    ).run();
+    for (const version of [1, 2, 3]) {
+      db.query(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, '2020-01-01')",
+      ).run(version);
+    }
+
+    db.query(
+      "INSERT INTO subscriptions VALUES ('g1', 'c1', 'streamer1', NULL)",
+    ).run();
+    db.query(
+      "INSERT INTO category_subscriptions VALUES ('g1', 'c1', 'cat1', 'Category One', 'en', NULL)",
+    ).run();
+    db.query("INSERT INTO blacklisted_streamers VALUES ('g1', 'baduser')").run();
+    db.query(
+      "INSERT INTO live_announcements VALUES ('g1', 'c1', 'streamer1', '', 'Streamer One', 'msg1')",
+    ).run();
+    db.query(
+      "INSERT INTO category_streamer_strikes VALUES ('cat1', 'streamer1', 2)",
+    ).run();
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    expect(
+      db.query("SELECT * FROM subscriptions").get() as any,
+    ).toMatchObject({ streamer_name: "streamer1", platform: "twitch" });
+    expect(
+      db.query("SELECT * FROM category_subscriptions").get() as any,
+    ).toMatchObject({ category_id: "cat1", platform: "twitch" });
+    expect(
+      db.query("SELECT * FROM blacklisted_streamers").get() as any,
+    ).toMatchObject({ streamer_name: "baduser", platform: "twitch" });
+    expect(
+      db.query("SELECT * FROM live_announcements").get() as any,
+    ).toMatchObject({ streamer_login: "streamer1", platform: "twitch" });
+    expect(
+      db.query("SELECT * FROM category_streamer_strikes").get() as any,
+    ).toMatchObject({ missing_strikes: 2, platform: "twitch" });
+
+    // A same-key row on the other platform must now be insertable —
+    // proving the PRIMARY KEY actually widened to include `platform`.
+    expect(() =>
+      db
+        .query(
+          "INSERT INTO subscriptions VALUES ('g1', 'c1', 'streamer1', NULL, 'kick')",
+        )
+        .run(),
+    ).not.toThrow();
+
+    const subCount = (
+      db.query("SELECT COUNT(*) as count FROM subscriptions").get() as {
+        count: number;
+      }
+    ).count;
+    expect(subCount).toBe(2);
+
+    const applied = db
+      .query("SELECT version FROM schema_migrations ORDER BY version")
+      .all() as { version: number }[];
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
   });
 
   test("a partially-migrated database (only migration 1 recorded) only applies migration 2", () => {

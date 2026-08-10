@@ -8,6 +8,8 @@ const envSchema = z.object({
   TWITCH_CLIENT_SECRET: z.string().min(1),
   TWITCH_REFRESH_TOKEN: z.string().min(1),
   RIOT_API_KEY: z.string().min(1),
+  KICK_CLIENT_ID: z.string().min(1),
+  KICK_CLIENT_SECRET: z.string().min(1),
 
   RIOT_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(120000),
   CATEGORY_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(60000),
@@ -30,6 +32,12 @@ const envSchema = z.object({
     .int()
     .positive()
     .default(800),
+  KICK_STREAMER_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60000),
+  KICK_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(600),
 });
 
 const _env = envSchema.safeParse(process.env);

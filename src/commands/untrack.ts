@@ -4,14 +4,15 @@ import {
   AutocompleteInteraction,
 } from "discord.js";
 import type { Command } from "../types";
-import { requireGuildId } from "../utils/discord";
+import { addPlatformOption, getPlatformOption, requireGuildId } from "../utils/discord";
 import { getGuildSubscriptions } from "../database/repositories/subscriptions";
 import {
   getGuildCategorySubscriptions,
   removeCategorySubscription,
 } from "../database/repositories/categorySubscriptions";
 import { getGuildLoLSubscriptions } from "../database/repositories/lolSubscriptions";
-import { removeStreamerSubscription } from "../services/twitchSubscriptions";
+import * as twitchSubscriptions from "../services/twitchSubscriptions";
+import * as kickSubscriptions from "../services/kickSubscriptions";
 import { removeLoLSubscription } from "../services/lolSubscriptions";
 
 export const command: Command = {
@@ -22,26 +23,28 @@ export const command: Command = {
     .addSubcommand((sub) =>
       sub
         .setName("streamer")
-        .setDescription("Stop tracking a specific Twitch streamer")
+        .setDescription("Stop tracking a specific streamer")
         .addStringOption((opt) =>
           opt
             .setName("username")
             .setDescription("Select the streamer")
             .setRequired(true)
             .setAutocomplete(true),
-        ),
+        )
+        .addStringOption(addPlatformOption),
     )
     .addSubcommand((sub) =>
       sub
         .setName("category")
-        .setDescription("Stop tracking a specific Twitch category")
+        .setDescription("Stop tracking a specific category")
         .addStringOption((opt) =>
           opt
             .setName("category")
             .setDescription("Select the category")
             .setRequired(true)
             .setAutocomplete(true),
-        ),
+        )
+        .addStringOption(addPlatformOption),
     )
     .addSubcommand((sub) =>
       sub
@@ -62,11 +65,14 @@ export const command: Command = {
 
     const focusedValue = interaction.options.getFocused().toLowerCase();
     const subcommand = interaction.options.getSubcommand();
+    const platform = getPlatformOption(interaction);
 
     if (subcommand === "streamer") {
       const subs = getGuildSubscriptions(guildId);
-      const filtered = subs.filter((sub) =>
-        sub.streamer_name.startsWith(focusedValue),
+      const filtered = subs.filter(
+        (sub) =>
+          sub.platform === platform &&
+          sub.streamer_name.startsWith(focusedValue),
       );
       await interaction.respond(
         filtered.slice(0, 25).map((sub) => ({
@@ -76,8 +82,10 @@ export const command: Command = {
       );
     } else if (subcommand === "category") {
       const subs = getGuildCategorySubscriptions(guildId);
-      const filtered = subs.filter((sub) =>
-        sub.category_name.toLowerCase().includes(focusedValue),
+      const filtered = subs.filter(
+        (sub) =>
+          sub.platform === platform &&
+          sub.category_name.toLowerCase().includes(focusedValue),
       );
       await interaction.respond(
         filtered.slice(0, 25).map((sub) => ({
@@ -105,12 +113,21 @@ export const command: Command = {
     const guildId = await requireGuildId(interaction);
     if (!guildId) return;
 
+    const platform = getPlatformOption(interaction);
+
     if (subcommand === "streamer") {
       const username = interaction.options
         .getString("username", true)
         .toLowerCase();
 
-      await removeStreamerSubscription(guildId, username);
+      if (platform === "kick") {
+        kickSubscriptions.removeStreamerSubscription(guildId, username);
+      } else {
+        await twitchSubscriptions.removeStreamerSubscription(
+          guildId,
+          username,
+        );
+      }
 
       await interaction.reply(
         `✅ Stopped monitoring streamer **${username}** on this server.`,
@@ -129,7 +146,7 @@ export const command: Command = {
         return;
       }
 
-      removeCategorySubscription(guildId, categoryName, language);
+      removeCategorySubscription(guildId, categoryName, language, platform);
       await interaction.reply(
         `✅ Stopped monitoring category **${categoryName}** (${language}) on this server.`,
       );

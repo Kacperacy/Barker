@@ -3,17 +3,53 @@ import {
   PermissionFlagsBits,
   EmbedBuilder,
 } from "discord.js";
-import type { Command } from "../types";
+import type { Command, Platform } from "../types";
 import { requireGuildId } from "../utils/discord";
-import { getGuildSubscriptions } from "../database/repositories/subscriptions";
-import { getGuildCategorySubscriptions } from "../database/repositories/categorySubscriptions";
+import {
+  getGuildSubscriptions,
+  type Subscription,
+} from "../database/repositories/subscriptions";
+import {
+  getGuildCategorySubscriptions,
+  type CategorySubscription,
+} from "../database/repositories/categorySubscriptions";
 import { getGuildLoLSubscriptions } from "../database/repositories/lolSubscriptions";
+
+function truncate(text: string): string {
+  return text.length > 1024 ? text.substring(0, 1021) + "..." : text;
+}
+
+function formatStreamerSection(subs: Subscription[]): string {
+  return truncate(
+    subs
+      .map(
+        (sub) =>
+          `**${sub.streamer_name}** -> <#${sub.channel_id}>\n> 📝 Message: ${
+            sub.custom_message ? `\`${sub.custom_message}\`` : "*Default*"
+          }`,
+      )
+      .join("\n\n"),
+  );
+}
+
+function formatCategorySection(subs: CategorySubscription[]): string {
+  return truncate(
+    subs
+      .map(
+        (sub) =>
+          `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>\n> 📝 Message: ${
+            sub.custom_message ? `\`${sub.custom_message}\`` : "*Default*"
+          }`,
+      )
+      .join("\n\n"),
+  );
+}
 
 export const command: Command = {
   data: new SlashCommandBuilder()
     .setName("list")
     .setDescription(
-      "View all monitored Twitch activity and LoL players on this server",
+      "View all monitored Twitch/Kick activity and LoL players on this server",
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -41,42 +77,29 @@ export const command: Command = {
       .setTitle("Monitored Activity")
       .setTimestamp();
 
-    if (streamerSubs.length > 0) {
-      const streamerText = streamerSubs
-        .map(
-          (sub) =>
-            `**${sub.streamer_name}** -> <#${sub.channel_id}>\n> 📝 Message: ${
-              sub.custom_message ? `\`${sub.custom_message}\`` : "*Default*"
-            }`,
-        )
-        .join("\n\n");
+    const byPlatform = <T extends { platform: Platform }>(
+      subs: T[],
+      platform: Platform,
+    ) => subs.filter((sub) => sub.platform === platform);
 
-      embed.addFields({
-        name: "👥 Twitch Streamers",
-        value:
-          streamerText.length > 1024
-            ? streamerText.substring(0, 1021) + "..."
-            : streamerText,
-      });
+    const streamerSections: [string, Subscription[]][] = [
+      ["👥 Twitch Streamers", byPlatform(streamerSubs, "twitch")],
+      ["👥 Kick Streamers", byPlatform(streamerSubs, "kick")],
+    ];
+    for (const [name, subs] of streamerSections) {
+      if (subs.length > 0) {
+        embed.addFields({ name, value: formatStreamerSection(subs) });
+      }
     }
 
-    if (categorySubs.length > 0) {
-      const categoryText = categorySubs
-        .map(
-          (sub) =>
-            `**${sub.category_name}** (${sub.language.toUpperCase()}) -> <#${sub.channel_id}>\n> 📝 Message: ${
-              sub.custom_message ? `\`${sub.custom_message}\`` : "*Default*"
-            }`,
-        )
-        .join("\n\n");
-
-      embed.addFields({
-        name: "🎮 Twitch Categories",
-        value:
-          categoryText.length > 1024
-            ? categoryText.substring(0, 1021) + "..."
-            : categoryText,
-      });
+    const categorySections: [string, CategorySubscription[]][] = [
+      ["🎮 Twitch Categories", byPlatform(categorySubs, "twitch")],
+      ["🎮 Kick Categories", byPlatform(categorySubs, "kick")],
+    ];
+    for (const [name, subs] of categorySections) {
+      if (subs.length > 0) {
+        embed.addFields({ name, value: formatCategorySection(subs) });
+      }
     }
 
     if (lolSubs.length > 0) {
@@ -89,8 +112,7 @@ export const command: Command = {
 
       embed.addFields({
         name: "⚔️ League of Legends",
-        value:
-          lolText.length > 1024 ? lolText.substring(0, 1021) + "..." : lolText,
+        value: truncate(lolText),
       });
     }
 

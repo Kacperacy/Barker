@@ -53,7 +53,7 @@ export async function startEventSub() {
 
         currentReconnectDelay = INITIAL_RECONNECT_DELAY;
 
-        const streamers = getAllUniqueStreamers();
+        const streamers = getAllUniqueStreamers("twitch");
         for (const login of streamers) {
           await subscribeToStreamer(login);
         }

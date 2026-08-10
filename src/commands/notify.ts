@@ -4,11 +4,9 @@ import {
   ChannelType,
 } from "discord.js";
 import type { Command } from "../types";
-import { requireGuildId } from "../utils/discord";
-import {
-  addCategorySubscription,
-  addStreamerSubscription,
-} from "../services/twitchSubscriptions";
+import { addPlatformOption, getPlatformOption, requireGuildId } from "../utils/discord";
+import * as twitchSubscriptions from "../services/twitchSubscriptions";
+import * as kickSubscriptions from "../services/kickSubscriptions";
 import { addLoLSubscription } from "../services/lolSubscriptions";
 
 export const command: Command = {
@@ -38,7 +36,8 @@ export const command: Command = {
             .setName("message")
             .setDescription("Custom message. Use {streamer} & {game}")
             .setRequired(false),
-        ),
+        )
+        .addStringOption(addPlatformOption),
     )
     .addSubcommand((sub) =>
       sub
@@ -68,7 +67,8 @@ export const command: Command = {
             .setName("message")
             .setDescription("Custom message. Use {streamer} & {game}")
             .setRequired(false),
-        ),
+        )
+        .addStringOption(addPlatformOption),
     )
     .addSubcommand((sub) =>
       sub
@@ -108,15 +108,30 @@ export const command: Command = {
     if (!guildId) return;
 
     if (subcommand === "streamer") {
+      await interaction.deferReply();
+
       const username = interaction.options
         .getString("username", true)
         .toLowerCase();
       const message = interaction.options.getString("message");
+      const platform = getPlatformOption(interaction);
+      const service =
+        platform === "kick" ? kickSubscriptions : twitchSubscriptions;
 
-      await addStreamerSubscription(guildId, channel.id, username, message);
+      const result = await service.addStreamerSubscription(
+        guildId,
+        channel.id,
+        username,
+        message,
+      );
 
-      await interaction.reply(
-        `✅ Now tracking streamer **${username}** in <#${channel.id}>.`,
+      if (!result.ok) {
+        await interaction.editReply(`❌ ${result.error}`);
+        return;
+      }
+
+      await interaction.editReply(
+        `✅ Now tracking streamer **${username}** on ${platform === "kick" ? "Kick" : "Twitch"} in <#${channel.id}>.`,
       );
     }
 
@@ -128,8 +143,11 @@ export const command: Command = {
         .getString("language", true)
         .toLowerCase();
       const message = interaction.options.getString("message");
+      const platform = getPlatformOption(interaction);
+      const service =
+        platform === "kick" ? kickSubscriptions : twitchSubscriptions;
 
-      const result = await addCategorySubscription(
+      const result = await service.addCategorySubscription(
         guildId,
         channel.id,
         categoryName,
@@ -143,7 +161,7 @@ export const command: Command = {
       }
 
       await interaction.editReply(
-        `✅ Now tracking category **${categoryName}** (${language}) in <#${channel.id}>.`,
+        `✅ Now tracking category **${categoryName}** (${language}) on ${platform === "kick" ? "Kick" : "Twitch"} in <#${channel.id}>.`,
       );
     }
 

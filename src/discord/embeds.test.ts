@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildKickLiveEmbed,
+  buildKickOfflineEmbed,
   buildLiveEmbed,
   buildLoLLiveEmbed,
   buildOfflineEmbed,
@@ -52,6 +54,62 @@ describe("buildOfflineEmbed", () => {
     expect(embed.title).toBe("Stream has ended");
     expect(embed.author?.name).toBe("SomeStreamer was live");
     expect(embed.url).toBe("https://twitch.tv/somestreamer");
+  });
+});
+
+describe("buildKickLiveEmbed", () => {
+  const stream = {
+    title: "Chill stream",
+    channel: { slug: "somestreamer" },
+    broadcaster_user: { id: 1, username: "SomeStreamer" },
+    category: { id: 1, name: "Just Chatting" },
+    language_code: "en",
+    viewer_count: 123,
+    thumbnail: "https://example.com/thumb.png",
+  };
+
+  test("builds the expected fields from a livestream payload", () => {
+    const embed = buildKickLiveEmbed(stream).toJSON();
+
+    expect(embed.title).toBe("Chill stream");
+    expect(embed.url).toBe("https://kick.com/somestreamer");
+    expect(embed.author?.name).toBe(
+      "SomeStreamer is live in Just Chatting!",
+    );
+    expect(embed.color).toBe(0x53fc18);
+    expect(embed.fields).toEqual([
+      { name: "Language", value: "EN", inline: true },
+      { name: "Viewers", value: "123", inline: true },
+    ]);
+    expect(embed.image?.url).toBe("https://example.com/thumb.png");
+  });
+
+  test("falls back to 'a category' when category is missing", () => {
+    const embed = buildKickLiveEmbed({
+      ...stream,
+      category: undefined,
+    }).toJSON();
+    expect(embed.author?.name).toBe("SomeStreamer is live in a category!");
+  });
+
+  test("shows N/A when language_code is missing", () => {
+    const embed = buildKickLiveEmbed({
+      ...stream,
+      language_code: "",
+    }).toJSON();
+    expect(embed.fields?.[0]?.value).toBe("N/A");
+  });
+});
+
+describe("buildKickOfflineEmbed", () => {
+  test("builds the expected offline embed", () => {
+    const embed = buildKickOfflineEmbed(
+      "SomeStreamer",
+      "somestreamer",
+    ).toJSON();
+    expect(embed.title).toBe("Stream has ended");
+    expect(embed.author?.name).toBe("SomeStreamer was live");
+    expect(embed.url).toBe("https://kick.com/somestreamer");
   });
 });
 

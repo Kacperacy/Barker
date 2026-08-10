@@ -4,7 +4,7 @@ import {
   AutocompleteInteraction,
 } from "discord.js";
 import type { Command } from "../types";
-import { requireGuildId } from "../utils/discord";
+import { addPlatformOption, getPlatformOption, requireGuildId } from "../utils/discord";
 import {
   removeBlacklist,
   getGuildBlacklist,
@@ -17,10 +17,11 @@ export const command: Command = {
     .addStringOption((opt) =>
       opt
         .setName("username")
-        .setDescription("Twitch username to remove from blacklist")
+        .setDescription("Username to remove from blacklist")
         .setRequired(true)
         .setAutocomplete(true),
     )
+    .addStringOption(addPlatformOption)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async autocomplete(interaction: AutocompleteInteraction) {
@@ -28,10 +29,13 @@ export const command: Command = {
     if (!guildId) return interaction.respond([]);
 
     const focusedValue = interaction.options.getFocused().toLowerCase();
+    const platform = getPlatformOption(interaction);
     const blacklisted = getGuildBlacklist(guildId);
 
-    const filtered = blacklisted.filter((sub) =>
-      sub.streamer_name.startsWith(focusedValue),
+    const filtered = blacklisted.filter(
+      (sub) =>
+        sub.platform === platform &&
+        sub.streamer_name.startsWith(focusedValue),
     );
 
     await interaction.respond(
@@ -43,11 +47,12 @@ export const command: Command = {
 
   async execute(interaction) {
     const username = interaction.options.getString("username")!.toLowerCase();
+    const platform = getPlatformOption(interaction);
 
     const guildId = await requireGuildId(interaction);
     if (!guildId) return;
 
-    removeBlacklist(guildId, username);
+    removeBlacklist(guildId, username, platform);
 
     await interaction.reply(
       `✅ **${username}** has been removed from the blacklist.`,
