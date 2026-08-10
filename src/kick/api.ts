@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { env } from "../config";
 import { logger } from "../utils/logger";
-import { getValidAppToken } from "./auth";
+import { getValidAppToken as getValidAppTokenDefault } from "./auth";
 import { MemoryCache } from "../utils/cache";
 import { fetchWithRetry, RateLimiter } from "../utils/http";
 import {
@@ -25,11 +25,16 @@ const kickRateLimiter = new RateLimiter([
 
 const MAX_BROADCASTER_IDS_PER_REQUEST = 100;
 
+// getAppToken is injectable (default: the real client-credentials flow) so
+// tests can pass a fake instead of module-mocking "./auth" — see
+// kick/auth.ts/auth.test.ts for why that's fragile in this environment (a
+// real, previously-observed CI-only failure from a leaked module mock).
 async function kickFetch(
   url: string,
   init: RequestInit = {},
+  getAppToken: () => Promise<string> = getValidAppTokenDefault,
 ): Promise<Response> {
-  const token = await getValidAppToken();
+  const token = await getAppToken();
   return fetchWithRetry(
     url,
     {
@@ -57,6 +62,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 export async function getKickBroadcasterId(
   slug: string,
+  getAppToken: () => Promise<string> = getValidAppTokenDefault,
 ): Promise<string | null> {
   const normalizedSlug = slug.toLowerCase();
 
@@ -65,6 +71,8 @@ export async function getKickBroadcasterId(
 
   const res = await kickFetch(
     `https://api.kick.com/public/v1/channels?slug=${encodeURIComponent(normalizedSlug)}`,
+    {},
+    getAppToken,
   );
   if (!res.ok) {
     logger.error(
@@ -91,6 +99,7 @@ export async function getKickBroadcasterId(
 
 export async function getKickCategoryId(
   name: string,
+  getAppToken: () => Promise<string> = getValidAppTokenDefault,
 ): Promise<{ id: string; name: string } | null> {
   const normalizedName = name.toLowerCase();
 
@@ -99,6 +108,8 @@ export async function getKickCategoryId(
 
   const res = await kickFetch(
     `https://api.kick.com/public/v2/categories?name=${encodeURIComponent(name)}`,
+    {},
+    getAppToken,
   );
   if (!res.ok) {
     logger.error(
@@ -125,6 +136,7 @@ export async function getKickCategoryId(
 
 export async function getKickLivestreamsByBroadcasterIds(
   broadcasterIds: string[],
+  getAppToken: () => Promise<string> = getValidAppTokenDefault,
 ): Promise<KickLivestream[]> {
   if (broadcasterIds.length === 0) return [];
 
@@ -139,6 +151,8 @@ export async function getKickLivestreamsByBroadcasterIds(
 
     const res = await kickFetch(
       `https://api.kick.com/public/v1/users/livestreams?${params.toString()}`,
+      {},
+      getAppToken,
     );
     if (!res.ok) {
       logger.error(
@@ -166,6 +180,7 @@ export async function getKickLivestreamsByBroadcasterIds(
 export async function getKickStreamsByCategory(
   categoryId: string,
   languageCode: string,
+  getAppToken: () => Promise<string> = getValidAppTokenDefault,
 ): Promise<KickLivestream[]> {
   let allStreams: KickLivestream[] = [];
   let cursor: string | null = null;
@@ -175,7 +190,7 @@ export async function getKickStreamsByCategory(
     const fetchUrl: string = cursor
       ? `${baseUrl}&cursor=${encodeURIComponent(cursor)}`
       : baseUrl;
-    const res = await kickFetch(fetchUrl);
+    const res = await kickFetch(fetchUrl, {}, getAppToken);
     if (!res.ok) {
       logger.error(
         `[Kick API] getKickStreamsByCategory error: ${res.status} ${await res.text()}`,

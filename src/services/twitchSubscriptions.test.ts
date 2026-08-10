@@ -1,21 +1,16 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import {
+  addCategorySubscription,
+  addStreamerSubscription,
+} from "./twitchSubscriptions";
 
-// addStreamerSubscription validates via the real Twitch API before writing
-// anything, so mock twitch/api.ts and twitch/eventsub.ts to control that
-// outcome without making network calls or touching the database (the
-// "not found" path returns before any repository write or subscribe call).
-mock.module("../twitch/api", () => ({
-  getTwitchUserId: async () => null,
-  getTwitchCategoryId: async () => null,
-  unsubscribeFromStreamerEvents: async () => {},
-}));
-mock.module("../twitch/eventsub", () => ({
-  subscribeToStreamer: async () => {},
-}));
-
-const { addCategorySubscription, addStreamerSubscription } = await import(
-  "./twitchSubscriptions"
-);
+// getTwitchUserId/subscribeToStreamer/getTwitchCategoryId are injected here
+// directly instead of module-mocking "../twitch/api"/"../twitch/eventsub" —
+// see kick/auth.test.ts for why that's fragile (a real, previously-observed
+// CI-only failure from a module mock leaking across test files).
+const fakeGetTwitchUserId = async () => null;
+const fakeSubscribeToStreamer = async () => {};
+const fakeGetTwitchCategoryId = async () => null;
 
 describe("addStreamerSubscription validation", () => {
   test("returns ok:false without saving when the username can't be resolved on Twitch", async () => {
@@ -24,6 +19,8 @@ describe("addStreamerSubscription validation", () => {
       "c1",
       "nosuchstreamer",
       null,
+      fakeGetTwitchUserId,
+      fakeSubscribeToStreamer,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -40,6 +37,7 @@ describe("addCategorySubscription validation", () => {
       "NoSuchCategory",
       "en",
       null,
+      fakeGetTwitchCategoryId,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {

@@ -1,4 +1,7 @@
-import { getKickBroadcasterId, getKickCategoryId } from "../kick/api";
+import {
+  getKickBroadcasterId as getKickBroadcasterIdDefault,
+  getKickCategoryId as getKickCategoryIdDefault,
+} from "../kick/api";
 import {
   addSubscription,
   removeSubscription,
@@ -13,11 +16,17 @@ export type AddStreamerSubscriptionResult =
   | { ok: true }
   | { ok: false; error: string };
 
+// getKickBroadcasterId is injectable (default: the real Kick API client) so
+// tests can pass a fake instead of module-mocking a module also imported for
+// real elsewhere (kick/api.test.ts) — see kick/auth.ts for the same pattern.
 export async function addStreamerSubscription(
   guildId: string,
   channelId: string,
   slug: string,
   customMessage: string | null,
+  getKickBroadcasterId: (
+    slug: string,
+  ) => Promise<string | null> = getKickBroadcasterIdDefault,
 ): Promise<AddStreamerSubscriptionResult> {
   const broadcasterId = await getKickBroadcasterId(slug);
   if (!broadcasterId) {
@@ -48,6 +57,9 @@ export async function addCategorySubscription(
   categoryName: string,
   language: string,
   customMessage: string | null,
+  getKickCategoryId: (
+    name: string,
+  ) => Promise<{ id: string; name: string } | null> = getKickCategoryIdDefault,
 ): Promise<AddCategorySubscriptionResult> {
   const category = await getKickCategoryId(categoryName);
   if (!category) {

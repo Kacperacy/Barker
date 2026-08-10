@@ -1,20 +1,15 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
-// kick/auth.ts reads/writes the `config` repository, which imports the
-// singleton `db` from "../connection" at load time. Mock the repository
-// module itself (rather than touching the real db) before dynamically
-// importing the module under test, since static imports are hoisted above
-// any mock.module call placed later in this file.
+// getValidAppToken takes getConfig/setConfig as injectable params, so this
+// uses a plain in-memory fake instead of bun:test's mock.module — avoids
+// depending on module-mock semantics that proved fragile across the suite
+// (a real, previously-observed CI-only failure from a leaked module mock).
+import { getValidAppToken } from "./auth";
 const configStore = new Map<string, string>();
-
-mock.module("../database/repositories/config", () => ({
-  getConfig: (key: string) => configStore.get(key) ?? null,
-  setConfig: (key: string, value: string) => {
-    configStore.set(key, value);
-  },
-}));
-
-const { getValidAppToken } = await import("./auth");
+const fakeGetConfig = (key: string) => configStore.get(key) ?? null;
+const fakeSetConfig = (key: string, value: string) => {
+  configStore.set(key, value);
+};
 
 const originalFetch = globalThis.fetch;
 
@@ -42,7 +37,7 @@ describe("getValidAppToken", () => {
       return tokenResponse("token-1");
     }) as unknown as typeof fetch;
 
-    const token = await getValidAppToken();
+    const token = await getValidAppToken(fakeGetConfig, fakeSetConfig);
 
     expect(token).toBe("token-1");
     expect(calls).toBe(1);
@@ -62,7 +57,7 @@ describe("getValidAppToken", () => {
       return tokenResponse("should-not-be-used");
     }) as unknown as typeof fetch;
 
-    const token = await getValidAppToken();
+    const token = await getValidAppToken(fakeGetConfig, fakeSetConfig);
 
     expect(token).toBe("cached-token");
     expect(calls).toBe(0);
@@ -78,7 +73,7 @@ describe("getValidAppToken", () => {
       return tokenResponse("new-token");
     }) as unknown as typeof fetch;
 
-    const token = await getValidAppToken();
+    const token = await getValidAppToken(fakeGetConfig, fakeSetConfig);
 
     expect(token).toBe("new-token");
     expect(calls).toBe(1);
@@ -97,7 +92,7 @@ describe("getValidAppToken", () => {
       return tokenResponse("refreshed-token");
     }) as unknown as typeof fetch;
 
-    const token = await getValidAppToken();
+    const token = await getValidAppToken(fakeGetConfig, fakeSetConfig);
 
     expect(token).toBe("refreshed-token");
     expect(calls).toBe(1);
@@ -112,9 +107,9 @@ describe("getValidAppToken", () => {
     }) as unknown as typeof fetch;
 
     const [a, b, c] = await Promise.all([
-      getValidAppToken(),
-      getValidAppToken(),
-      getValidAppToken(),
+      getValidAppToken(fakeGetConfig, fakeSetConfig),
+      getValidAppToken(fakeGetConfig, fakeSetConfig),
+      getValidAppToken(fakeGetConfig, fakeSetConfig),
     ]);
 
     expect(a).toBe("token-x");
@@ -127,6 +122,8 @@ describe("getValidAppToken", () => {
     globalThis.fetch = (async () =>
       new Response("bad credentials", { status: 401 })) as unknown as typeof fetch;
 
-    await expect(getValidAppToken()).rejects.toThrow();
+    await expect(
+      getValidAppToken(fakeGetConfig, fakeSetConfig),
+    ).rejects.toThrow();
   });
 });

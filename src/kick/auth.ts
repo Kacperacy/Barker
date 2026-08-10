@@ -1,6 +1,9 @@
 import { env } from "../config";
 import { logger } from "../utils/logger";
-import { getConfig, setConfig } from "../database/repositories/config";
+import {
+  getConfig as getConfigDefault,
+  setConfig as setConfigDefault,
+} from "../database/repositories/config";
 import { kickTokenResponseSchema } from "./schemas";
 
 const TOKEN_KEY = "kick_app_token";
@@ -12,7 +15,15 @@ const TOKEN_EXPIRES_AT_KEY = "kick_app_token_expires_at";
 // refreshes racing each other under load.
 let tokenRequestPromise: Promise<string> | null = null;
 
-export async function getValidAppToken(): Promise<string> {
+// getConfig/setConfig are injectable (defaulting to the real repository, the
+// same pattern runMigrations(db = defaultDb) already uses) so tests can pass
+// a plain in-memory fake instead of relying on module-mocking, which is
+// fragile across bun versions/file load order for a module already imported
+// elsewhere in the process.
+export async function getValidAppToken(
+  getConfig: (key: string) => string | null = getConfigDefault,
+  setConfig: (key: string, value: string) => void = setConfigDefault,
+): Promise<string> {
   const cachedToken = getConfig(TOKEN_KEY);
   const cachedExpiresAt = getConfig(TOKEN_EXPIRES_AT_KEY);
 

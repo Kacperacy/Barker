@@ -1,16 +1,17 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { env } from "../config";
-
-mock.module("./auth", () => ({
-  getValidAppToken: async () => "test-app-token",
-}));
-
-const {
+import {
   getKickBroadcasterId,
   getKickCategoryId,
   getKickLivestreamsByBroadcasterIds,
   getKickStreamsByCategory,
-} = await import("./api");
+} from "./api";
+
+// getAppToken is injected directly into every call below instead of
+// module-mocking "./auth" — see kick/auth.ts/auth.test.ts for why that's
+// fragile in this environment (a real, previously-observed CI-only failure
+// from a leaked module mock).
+const fakeGetAppToken = async () => "test-app-token";
 
 const originalFetch = globalThis.fetch;
 
@@ -51,28 +52,28 @@ describe("getKickBroadcasterId", () => {
       }),
     ]);
 
-    const id = await getKickBroadcasterId("SomeStreamer");
+    const id = await getKickBroadcasterId("SomeStreamer", fakeGetAppToken);
     expect(id).toBe("12345");
   });
 
   test("returns null and logs on a 404", async () => {
     mockFetchSequence([jsonResponse(404, { message: "not found" })]);
 
-    const id = await getKickBroadcasterId("doesnotexist");
+    const id = await getKickBroadcasterId("doesnotexist", fakeGetAppToken);
     expect(id).toBeNull();
   });
 
   test("returns null on an empty data array (slug not found)", async () => {
     mockFetchSequence([jsonResponse(200, { data: [] })]);
 
-    const id = await getKickBroadcasterId("nosuchuser");
+    const id = await getKickBroadcasterId("nosuchuser", fakeGetAppToken);
     expect(id).toBeNull();
   });
 
   test("returns null on a malformed response shape", async () => {
     mockFetchSequence([jsonResponse(200, { data: [{ slug: "onlyslug" }] })]);
 
-    const id = await getKickBroadcasterId("someuser");
+    const id = await getKickBroadcasterId("someuser", fakeGetAppToken);
     expect(id).toBeNull();
   });
 
@@ -83,8 +84,8 @@ describe("getKickBroadcasterId", () => {
       }),
     ]);
 
-    await getKickBroadcasterId("cacheduser");
-    await getKickBroadcasterId("cacheduser");
+    await getKickBroadcasterId("cacheduser", fakeGetAppToken);
+    await getKickBroadcasterId("cacheduser", fakeGetAppToken);
 
     expect(urls.length).toBe(1);
   });
@@ -96,14 +97,20 @@ describe("getKickCategoryId", () => {
       jsonResponse(200, { data: [{ id: 1, name: "Just Chatting" }] }),
     ]);
 
-    const category = await getKickCategoryId("Just Chatting");
+    const category = await getKickCategoryId(
+      "Just Chatting",
+      fakeGetAppToken,
+    );
     expect(category).toEqual({ id: "1", name: "Just Chatting" });
   });
 
   test("returns null when no category matches", async () => {
     mockFetchSequence([jsonResponse(200, { data: [] })]);
 
-    const category = await getKickCategoryId("NoSuchCategory");
+    const category = await getKickCategoryId(
+      "NoSuchCategory",
+      fakeGetAppToken,
+    );
     expect(category).toBeNull();
   });
 });
@@ -125,7 +132,10 @@ describe("getKickLivestreamsByBroadcasterIds", () => {
   test("returns an empty array without fetching when given no ids", async () => {
     const urls = mockFetchSequence([jsonResponse(200, { data: [] })]);
 
-    const result = await getKickLivestreamsByBroadcasterIds([]);
+    const result = await getKickLivestreamsByBroadcasterIds(
+      [],
+      fakeGetAppToken,
+    );
     expect(result).toEqual([]);
     expect(urls.length).toBe(0);
   });
@@ -137,7 +147,10 @@ describe("getKickLivestreamsByBroadcasterIds", () => {
       }),
     ]);
 
-    const result = await getKickLivestreamsByBroadcasterIds(["1", "2"]);
+    const result = await getKickLivestreamsByBroadcasterIds(
+      ["1", "2"],
+      fakeGetAppToken,
+    );
     expect(result.length).toBe(2);
   });
 
@@ -148,7 +161,10 @@ describe("getKickLivestreamsByBroadcasterIds", () => {
     ]);
 
     const ids = Array.from({ length: 150 }, (_, i) => String(i + 1));
-    const result = await getKickLivestreamsByBroadcasterIds(ids);
+    const result = await getKickLivestreamsByBroadcasterIds(
+      ids,
+      fakeGetAppToken,
+    );
 
     expect(urls.length).toBe(2);
     expect(result.length).toBe(2);
@@ -168,7 +184,10 @@ describe("getKickLivestreamsByBroadcasterIds", () => {
     ]);
 
     const ids = Array.from({ length: 150 }, (_, i) => String(i + 1));
-    const result = await getKickLivestreamsByBroadcasterIds(ids);
+    const result = await getKickLivestreamsByBroadcasterIds(
+      ids,
+      fakeGetAppToken,
+    );
 
     expect(result.length).toBe(1);
   });
@@ -193,7 +212,7 @@ describe("getKickStreamsByCategory", () => {
       jsonResponse(200, { data: [livestreamFixture(1, "a")] }),
     ]);
 
-    const result = await getKickStreamsByCategory("1", "en");
+    const result = await getKickStreamsByCategory("1", "en", fakeGetAppToken);
     expect(result.length).toBe(1);
   });
 
@@ -209,7 +228,7 @@ describe("getKickStreamsByCategory", () => {
       }),
     ]);
 
-    const result = await getKickStreamsByCategory("1", "en");
+    const result = await getKickStreamsByCategory("1", "en", fakeGetAppToken);
 
     expect(result.length).toBe(2);
     expect(urls.length).toBe(2);
@@ -225,7 +244,7 @@ describe("getKickStreamsByCategory", () => {
       jsonResponse(500, { message: "server error" }),
     ]);
 
-    const result = await getKickStreamsByCategory("1", "en");
+    const result = await getKickStreamsByCategory("1", "en", fakeGetAppToken);
     expect(result.length).toBe(1);
   });
 });

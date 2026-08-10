@@ -1,17 +1,12 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { addCategorySubscription, addStreamerSubscription } from "./kickSubscriptions";
 
-// addStreamerSubscription/addCategorySubscription validate via the real Kick
-// API before writing anything, so mock kick/api.ts to control that outcome
-// without making network calls or touching the database (the "not found"
-// paths return before any repository write happens).
-mock.module("../kick/api", () => ({
-  getKickBroadcasterId: async () => null,
-  getKickCategoryId: async () => null,
-}));
-
-const { addCategorySubscription, addStreamerSubscription } = await import(
-  "./kickSubscriptions"
-);
+// getKickBroadcasterId/getKickCategoryId are injected here directly instead
+// of module-mocking "../kick/api" — that module is also imported for real by
+// kick/api.test.ts, and bun's mock.module is a global registry replacement
+// sensitive to file load order, which previously caused a CI-only failure.
+const fakeGetKickBroadcasterId = async () => null;
+const fakeGetKickCategoryId = async () => null;
 
 describe("addStreamerSubscription validation", () => {
   test("returns ok:false without saving when the slug can't be resolved on Kick", async () => {
@@ -20,6 +15,7 @@ describe("addStreamerSubscription validation", () => {
       "c1",
       "nosuchstreamer",
       null,
+      fakeGetKickBroadcasterId,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -36,6 +32,7 @@ describe("addCategorySubscription validation", () => {
       "NoSuchCategory",
       "en",
       null,
+      fakeGetKickCategoryId,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {

@@ -1,9 +1,9 @@
 import {
-  getTwitchCategoryId,
-  getTwitchUserId,
+  getTwitchCategoryId as getTwitchCategoryIdDefault,
+  getTwitchUserId as getTwitchUserIdDefault,
   unsubscribeFromStreamerEvents,
 } from "../twitch/api";
-import { subscribeToStreamer } from "../twitch/eventsub";
+import { subscribeToStreamer as subscribeToStreamerDefault } from "../twitch/eventsub";
 import {
   addSubscription,
   getSubscriptionsForStreamer,
@@ -19,11 +19,20 @@ export type AddStreamerSubscriptionResult =
   | { ok: true }
   | { ok: false; error: string };
 
+// getTwitchUserId/subscribeToStreamer are injectable (defaults: the real
+// Twitch client/EventSub) so tests can pass fakes instead of module-mocking
+// — see kick/auth.ts for why that's fragile across bun versions/file order.
 export async function addStreamerSubscription(
   guildId: string,
   channelId: string,
   username: string,
   customMessage: string | null,
+  getTwitchUserId: (
+    username: string,
+  ) => Promise<string | null> = getTwitchUserIdDefault,
+  subscribeToStreamer: (
+    username: string,
+  ) => Promise<void> = subscribeToStreamerDefault,
 ): Promise<AddStreamerSubscriptionResult> {
   const userId = await getTwitchUserId(username);
   if (!userId) {
@@ -60,6 +69,9 @@ export async function addCategorySubscription(
   categoryName: string,
   language: string,
   customMessage: string | null,
+  getTwitchCategoryId: (
+    name: string,
+  ) => Promise<string | null> = getTwitchCategoryIdDefault,
 ): Promise<AddCategorySubscriptionResult> {
   const categoryId = await getTwitchCategoryId(categoryName);
   if (!categoryId) {
