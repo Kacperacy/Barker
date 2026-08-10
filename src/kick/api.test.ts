@@ -5,7 +5,30 @@ import {
   getKickCategoryId,
   getKickLivestreamsByBroadcasterIds,
   getKickStreamsByCategory,
+  toKickSlug,
 } from "./api";
+
+describe("toKickSlug", () => {
+  test("replaces underscores with hyphens", () => {
+    expect(toKickSlug("some_streamer")).toBe("some-streamer");
+  });
+
+  test("lowercases mixed-case input", () => {
+    expect(toKickSlug("SomeStreamer")).toBe("somestreamer");
+  });
+
+  test("trims surrounding whitespace", () => {
+    expect(toKickSlug("  some_streamer  ")).toBe("some-streamer");
+  });
+
+  test("handles multiple underscores", () => {
+    expect(toKickSlug("some_cool_streamer")).toBe("some-cool-streamer");
+  });
+
+  test("is a no-op for an already-hyphenated slug", () => {
+    expect(toKickSlug("some-streamer")).toBe("some-streamer");
+  });
+});
 
 // getAppToken is injected directly into every call below instead of
 // module-mocking "./auth" — see kick/auth.ts/auth.test.ts for why that's

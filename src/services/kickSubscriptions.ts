@@ -1,6 +1,7 @@
 import {
   getKickBroadcasterId as getKickBroadcasterIdDefault,
   getKickCategoryId as getKickCategoryIdDefault,
+  toKickSlug,
 } from "../kick/api";
 import {
   addSubscription,
@@ -28,12 +29,13 @@ export async function addStreamerSubscription(
     slug: string,
   ) => Promise<string | null> = getKickBroadcasterIdDefault,
 ): Promise<AddStreamerSubscriptionResult> {
-  const broadcasterId = await getKickBroadcasterId(slug);
+  const normalizedSlug = toKickSlug(slug);
+  const broadcasterId = await getKickBroadcasterId(normalizedSlug);
   if (!broadcasterId) {
     return { ok: false, error: `Could not find Kick streamer **${slug}**.` };
   }
 
-  addSubscription(guildId, channelId, slug, customMessage, "kick");
+  addSubscription(guildId, channelId, normalizedSlug, customMessage, "kick");
   return { ok: true };
 }
 

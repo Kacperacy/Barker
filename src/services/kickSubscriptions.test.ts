@@ -22,6 +22,24 @@ describe("addStreamerSubscription validation", () => {
       expect(result.error).toMatch(/nosuchstreamer/);
     }
   });
+
+  test("looks up the underscore-to-hyphen normalized slug, not the raw input", async () => {
+    const captured: { slug: string | null } = { slug: null };
+    const capturingFakeLookup = async (slug: string) => {
+      captured.slug = slug;
+      return null;
+    };
+
+    await addStreamerSubscription(
+      "g1",
+      "c1",
+      "some_cool_streamer",
+      null,
+      capturingFakeLookup,
+    );
+
+    expect(captured.slug).toBe("some-cool-streamer");
+  });
 });
 
 describe("addCategorySubscription validation", () => {

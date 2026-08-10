@@ -25,6 +25,15 @@ const kickRateLimiter = new RateLimiter([
 
 const MAX_BROADCASTER_IDS_PER_REQUEST = 100;
 
+// Kick channel slugs are the lowercased username with underscores replaced
+// by hyphens (e.g. "some_streamer" -> "some-streamer") — the API and every
+// live-stream response use this hyphenated form, so any user-typed username
+// must be normalized to it before lookup or storage, or underscore-containing
+// names silently never resolve.
+export function toKickSlug(input: string): string {
+  return input.trim().toLowerCase().replace(/_/g, "-");
+}
+
 // getAppToken is injectable (default: the real client-credentials flow) so
 // tests can pass a fake instead of module-mocking "./auth" — see
 // kick/auth.ts/auth.test.ts for why that's fragile in this environment (a
