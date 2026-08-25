@@ -5,6 +5,7 @@ import { getValidUserToken } from "./auth";
 import { MemoryCache } from "../utils/cache";
 import { fetchWithRetry, RateLimiter } from "../utils/http";
 import {
+  eventSubSubscriptionSchema,
   eventSubSubscriptionsResponseSchema,
   twitchGamesResponseSchema,
   twitchStreamSchema,
@@ -13,6 +14,10 @@ import {
 } from "./schemas";
 
 type TwitchStream = z.infer<typeof twitchStreamSchema>;
+export type EventSubSubscription = z.infer<typeof eventSubSubscriptionSchema>;
+
+const EVENTSUB_SUBSCRIPTIONS_URL =
+  "https://api.twitch.tv/helix/eventsub/subscriptions";
 
 const userIdCache = new MemoryCache<string>(24 * 60 * 60 * 1000);
 const categoryIdCache = new MemoryCache<string>(24 * 60 * 60 * 1000);
@@ -97,6 +102,86 @@ export async function getStreamData(
   return parsed.data.data[0] ?? null;
 }
 
+// Twitch keys subscription uniqueness on type + condition per client ID, so
+// a subscription left behind by a dead session blocks its own replacement
+// with a 409 — the streamer would stay bound to a session that will never
+// deliver events again.
+export function isZombieSubscription(sub: { status: string }): boolean {
+  return sub.status !== "enabled";
+}
+
+export function planConflictResolution(
+  existing: { status: string; transport: { session_id?: string } } | null,
+  sessionId: string,
+): "keep" | "replace" | "create" {
+  if (!existing) return "create";
+  if (
+    existing.status === "enabled" &&
+    existing.transport.session_id === sessionId
+  )
+    return "keep";
+  return "replace";
+}
+
+// Walks every page: a single page caps at 100, and a bot tracking more
+// streamers than that would silently never see the rest.
+async function listEventSubSubscriptions(): Promise<EventSubSubscription[]> {
+  const all: EventSubSubscription[] = [];
+  let cursor: string | null = null;
+
+  do {
+    const res = await twitchFetch(
+      cursor
+        ? `${EVENTSUB_SUBSCRIPTIONS_URL}?after=${cursor}`
+        : EVENTSUB_SUBSCRIPTIONS_URL,
+    );
+    if (!res.ok) {
+      logger.error(
+        `[Twitch API] listEventSubSubscriptions error: ${res.status} ${await res.text()}`,
+      );
+      break;
+    }
+
+    const parsed = eventSubSubscriptionsResponseSchema.safeParse(
+      await res.json(),
+    );
+    if (!parsed.success) {
+      logger.error(
+        `[Twitch API] listEventSubSubscriptions: unexpected response shape: ${parsed.error.message}`,
+      );
+      break;
+    }
+
+    all.push(...parsed.data.data);
+    cursor = parsed.data.pagination?.cursor ?? null;
+  } while (cursor);
+
+  return all;
+}
+
+async function deleteSubscription(id: string): Promise<void> {
+  await twitchFetch(`${EVENTSUB_SUBSCRIPTIONS_URL}?id=${id}`, {
+    method: "DELETE",
+  });
+}
+
+function createSubscription(
+  eventType: string,
+  broadcasterId: string,
+  sessionId: string,
+): Promise<Response> {
+  return twitchFetch(EVENTSUB_SUBSCRIPTIONS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: eventType,
+      version: "1",
+      condition: { broadcaster_user_id: broadcasterId },
+      transport: { method: "websocket", session_id: sessionId },
+    }),
+  });
+}
+
 export async function subscribeToEvent(
   login: string,
   eventType: string,
@@ -108,19 +193,34 @@ export async function subscribeToEvent(
     return;
   }
 
-  const res = await twitchFetch(
-    "https://api.twitch.tv/helix/eventsub/subscriptions",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: eventType,
-        version: "1",
-        condition: { broadcaster_user_id: broadcasterId },
-        transport: { method: "websocket", session_id: sessionId },
-      }),
-    },
-  );
+  let res = await createSubscription(eventType, broadcasterId, sessionId);
+
+  if (res.status === 409) {
+    const existing =
+      (await listEventSubSubscriptions()).find(
+        (sub) =>
+          sub.type === eventType &&
+          sub.condition.broadcaster_user_id === broadcasterId,
+      ) ?? null;
+
+    const plan = planConflictResolution(existing, sessionId);
+
+    if (plan === "keep") {
+      logger.info(
+        `Already subscribed to ${eventType} for ${login} on this session`,
+      );
+      return;
+    }
+
+    if (plan === "replace" && existing) {
+      logger.info(
+        `Replacing stale ${eventType} subscription for ${login} (status: ${existing.status})`,
+      );
+      await deleteSubscription(existing.id);
+    }
+
+    res = await createSubscription(eventType, broadcasterId, sessionId);
+  }
 
   if (res.ok) logger.info(`Subscribed to ${eventType} for ${login}`);
   else
@@ -133,30 +233,12 @@ export async function unsubscribeFromStreamerEvents(login: string) {
   const broadcasterId = await getTwitchUserId(login);
   if (!broadcasterId) return;
 
-  const res = await twitchFetch(
-    "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled",
-  );
-  if (!res.ok) return;
-
-  const parsed = eventSubSubscriptionsResponseSchema.safeParse(
-    await res.json(),
-  );
-  if (!parsed.success) {
-    logger.error(
-      `[Twitch API] unsubscribeFromStreamerEvents: unexpected response shape: ${parsed.error.message}`,
-    );
-    return;
-  }
-
-  const subsToDelete = parsed.data.data.filter(
+  const subsToDelete = (await listEventSubSubscriptions()).filter(
     (sub) => sub.condition.broadcaster_user_id === broadcasterId,
   );
 
   for (const sub of subsToDelete) {
-    await twitchFetch(
-      `https://api.twitch.tv/helix/eventsub/subscriptions?id=${sub.id}`,
-      { method: "DELETE" },
-    );
+    await deleteSubscription(sub.id);
     logger.info(
       `Unsubscribed from event ${sub.type} for ${login} in Twitch API`,
     );
@@ -233,26 +315,14 @@ export async function getStreamsByCategory(
 }
 
 export async function cleanupZombieSubscriptions() {
-  const res = await twitchFetch(
-    "https://api.twitch.tv/helix/eventsub/subscriptions?status=websocket_disconnected",
+  const zombies = (await listEventSubSubscriptions()).filter(
+    isZombieSubscription,
   );
-  if (!res.ok) return;
 
-  const parsed = eventSubSubscriptionsResponseSchema.safeParse(
-    await res.json(),
-  );
-  if (!parsed.success) {
-    logger.error(
-      `[Twitch API] cleanupZombieSubscriptions: unexpected response shape: ${parsed.error.message}`,
+  for (const sub of zombies) {
+    await deleteSubscription(sub.id);
+    logger.info(
+      `Cleaned up zombie subscription: ${sub.id} (status: ${sub.status})`,
     );
-    return;
-  }
-
-  for (const sub of parsed.data.data) {
-    await twitchFetch(
-      `https://api.twitch.tv/helix/eventsub/subscriptions?id=${sub.id}`,
-      { method: "DELETE" },
-    );
-    logger.info(`Cleaned up zombie subscription: ${sub.id}`);
   }
 }
