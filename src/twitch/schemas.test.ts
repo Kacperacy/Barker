@@ -94,6 +94,7 @@ describe("eventSubSubscriptionsResponseSchema", () => {
           status: "enabled",
           type: "stream.online",
           condition: { broadcaster_user_id: "12345" },
+          transport: { method: "websocket", session_id: "session-1" },
         },
       ],
       total: 1,
