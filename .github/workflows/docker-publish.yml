@@ -43,3 +43,23 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # The recorder ships as its own image: it needs ffmpeg, streamlink and
+      # rclone, which have no business in the bot's container.
+      - name: Extract metadata for the recorder image
+        id: meta-recorder
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/barker-recorder
+          tags: |
+            type=raw,value=latest
+            type=ref,event=branch
+
+      - name: Build and push recorder image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.recorder
+          push: true
+          tags: ${{ steps.meta-recorder.outputs.tags }}
+          labels: ${{ steps.meta-recorder.outputs.labels }}

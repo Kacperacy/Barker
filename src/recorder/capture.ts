@@ -5,11 +5,18 @@ import type { Database } from "bun:sqlite";
 import { env } from "../config";
 import { logger } from "../utils/logger";
 import {
+  countUploadedParts,
   getArchive,
   getParts,
   updateArchive,
   type VodArchive,
 } from "../database/repositories/vodArchives";
+import { findArchivedVideoId } from "../twitch/api";
+import {
+  buildVideoUrl,
+  buildVodCandidateUrls,
+  findExistingVodUrl,
+} from "./recovery";
 import { buildRemoteDir, buildStreamUrl, parsePartIndex } from "./naming";
 import { startCapture as realStartCapture, type StartCapture } from "./pipeline";
 import {
@@ -29,6 +36,9 @@ export interface CaptureDeps {
   // Aborted on shutdown: the capture is asked to stop so ffmpeg finalizes its
   // current segment, and the restart loop does not start another one.
   signal?: AbortSignal;
+  // Resolves a stream URL for a broadcast that was never captured live, or
+  // null when the VOD is unrecoverable.
+  findRecoverySource: (archive: VodArchive) => Promise<string | null>;
 }
 
 export const defaultCaptureDeps: CaptureDeps = {
@@ -43,6 +53,23 @@ export const defaultCaptureDeps: CaptureDeps = {
     return stats.bavail * stats.bsize;
   },
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  // A still-published VOD is both cheaper and higher fidelity than probing
+  // CDN paths, so it is tried first.
+  findRecoverySource: async (archive) => {
+    const videoId = await findArchivedVideoId(
+      archive.streamer_login,
+      archive.stream_id,
+    );
+    if (videoId) return buildVideoUrl(videoId);
+
+    return findExistingVodUrl(
+      buildVodCandidateUrls(
+        archive.streamer_login,
+        archive.stream_id,
+        archive.started_at,
+      ),
+    );
+  },
 };
 
 // How often the uploader sweeps for segments ffmpeg has closed. Short relative
@@ -193,6 +220,68 @@ export async function runArchive(
   await finalize(archive.id, dir, remoteDir, uploader, deps);
 }
 
+// Last resort for a broadcast that was never captured live. Twitch only:
+// Kick has no VOD API and no known deterministic CDN path scheme, so a Kick
+// stream the recorder missed is simply gone.
+async function tryRecover(
+  archiveId: number,
+  dir: string,
+  remoteDir: string,
+  uploader: UploaderDeps,
+  deps: CaptureDeps,
+): Promise<boolean> {
+  const db = deps.db;
+  const archive = getArchive(archiveId, db);
+  if (!archive) return false;
+
+  if (!env.ARCHIVE_RECOVERY_ENABLED || archive.platform !== "twitch") {
+    return false;
+  }
+
+  const source = await deps.findRecoverySource(archive);
+  if (!source) {
+    logger.warn(
+      `[Recorder] No recoverable VOD found for ${archive.streamer_login} broadcast ${archive.stream_id}`,
+    );
+    return false;
+  }
+
+  logger.info(`[Recorder] Recovering ${archive.streamer_login} from ${source}`);
+  updateArchive(archiveId, { vod_m3u8: source }, db);
+
+  const pipeline = deps.startCapture({
+    url: source,
+    platform: archive.platform,
+    quality: env.ARCHIVE_QUALITY,
+    outputDir: dir,
+    segmentSeconds: env.ARCHIVE_SEGMENT_SECONDS,
+    startNumber: 0,
+  });
+
+  let finished = false;
+  const exited = pipeline.exited.then((code) => {
+    finished = true;
+    return code;
+  });
+
+  while (!finished) {
+    await deps.sleep(DRAIN_INTERVAL_MS);
+    if (finished) break;
+    await drainClosedParts(archiveId, dir, remoteDir, false, uploader);
+  }
+
+  await exited;
+  await drainClosedParts(archiveId, dir, remoteDir, true, uploader);
+
+  if (countUploadedParts(archiveId, db) === 0) return false;
+
+  updateArchive(archiveId, { status: "recovered", error: null }, db);
+  logger.info(
+    `[Recorder] Recovered ${archive.streamer_login} broadcast ${archive.stream_id}`,
+  );
+  return true;
+}
+
 async function finalize(
   archiveId: number,
   dir: string,
@@ -208,6 +297,11 @@ async function finalize(
   const uploaded = parts.filter((part) => part.status === "uploaded");
 
   if (uploaded.length === 0) {
+    // Nothing was captured live — the recorder was down, or the capture never
+    // started. The published or freshly-deleted VOD is the only remaining
+    // chance at this broadcast.
+    if (await tryRecover(archiveId, dir, remoteDir, uploader, deps)) return;
+
     updateArchive(
       archiveId,
       {

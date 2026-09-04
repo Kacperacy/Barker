@@ -21,6 +21,10 @@ function makeHarness(options: {
   segmentsPerRun: number[];
   freeBytes?: number;
   uploadFails?: boolean;
+  // A recoverable VOD URL for a broadcast that was never captured live.
+  recoverySource?: string | null;
+  // Segments the recovery capture produces, when one runs.
+  recoverySegments?: number;
   // Which capture attempt the platform reports the stream offline during.
   // Defaults to the first, i.e. the ordinary "streamer ends the broadcast"
   // case. `null` means the stream never goes offline.
@@ -40,12 +44,28 @@ function makeHarness(options: {
 
   const present = new Set<string>();
   const uploaded: string[] = [];
+  const capturedUrls: string[] = [];
   let run = 0;
   let captureCount = 0;
+  let recoveryLookups = 0;
 
   const deps: CaptureDeps = {
     db,
+    findRecoverySource: async () => {
+      recoveryLookups += 1;
+      return options.recoverySource ?? null;
+    },
     startCapture: (opts) => {
+      capturedUrls.push(opts.url);
+
+      // A recovery capture is addressed by VOD URL rather than channel.
+      if (opts.url.includes("/videos/") || opts.url.endsWith(".m3u8")) {
+        for (let i = 0; i < (options.recoverySegments ?? 0); i++) {
+          present.add(`part_${String(i).padStart(5, "0")}.mp4`);
+        }
+        return { exited: Promise.resolve(0), stop() {} };
+      }
+
       captureCount += 1;
       const offlineDuring =
         options.offlineDuringCapture === undefined
@@ -83,7 +103,9 @@ function makeHarness(options: {
     archive,
     deps,
     uploaded,
+    capturedUrls,
     captureCount: () => captureCount,
+    recoveryLookups: () => recoveryLookups,
   };
 }
 
@@ -217,6 +239,43 @@ describe("runArchive", () => {
     expect(h.captureCount()).toBe(1);
     // Whatever was captured before the shutdown is still uploaded.
     expect(h.uploaded).toHaveLength(1);
+  });
+
+  // The recorder missed the broadcast entirely; the platform's own copy is
+  // the only remaining chance at it.
+  test("falls back to the VOD when nothing was captured live", async () => {
+    const h = makeHarness({
+      segmentsPerRun: [0],
+      recoverySource: "https://twitch.tv/videos/999",
+      recoverySegments: 2,
+    });
+
+    await runArchive(h.archive, h.deps);
+
+    expect(getArchive(h.archiveId, h.db)?.status).toBe("recovered");
+    expect(getArchive(h.archiveId, h.db)?.vod_m3u8).toBe(
+      "https://twitch.tv/videos/999",
+    );
+    expect(h.uploaded).toHaveLength(2);
+  });
+
+  test("fails the archive when the VOD is gone too", async () => {
+    const h = makeHarness({ segmentsPerRun: [0], recoverySource: null });
+
+    await runArchive(h.archive, h.deps);
+
+    expect(h.recoveryLookups()).toBe(1);
+    expect(getArchive(h.archiveId, h.db)?.status).toBe("failed");
+  });
+
+  // Recovery costs a Helix call plus thousands of CDN probes, so it must not
+  // run for a broadcast that was captured successfully.
+  test("does not attempt recovery when the live capture succeeded", async () => {
+    const h = makeHarness({ segmentsPerRun: [2] });
+
+    await runArchive(h.archive, h.deps);
+
+    expect(h.recoveryLookups()).toBe(0);
   });
 
   test("fails the archive when segments were captured but could not be uploaded", async () => {
