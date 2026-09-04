@@ -10,6 +10,7 @@ import {
   announceIfNewlyLive,
   retireLiveAnnouncements,
 } from "../discord/liveTracking";
+import { recordStreamEnd, recordStreamStart } from "../archive/jobs";
 
 let isPolling = false;
 
@@ -47,6 +48,16 @@ export function startKickStreamerPolling(client: Client) {
         const stream = streamBySlug.get(slug);
 
         if (stream) {
+          // Idempotent per livestream id, so re-reporting the same stream on
+          // every tick queues one archive, not one per tick.
+          recordStreamStart({
+            platform: "kick",
+            login: slug,
+            streamId: stream.id,
+            title: stream.title,
+            startedAt: stream.started_at,
+          });
+
           for (const sub of subs) {
             const announced = await announceIfNewlyLive({
               client,
@@ -68,6 +79,8 @@ export function startKickStreamerPolling(client: Client) {
             }
           }
         } else {
+          recordStreamEnd("kick", slug);
+
           await retireLiveAnnouncements({
             client,
             platform: "kick",

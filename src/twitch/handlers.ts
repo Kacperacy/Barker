@@ -4,11 +4,22 @@ import { twitchEvents } from "./eventsub";
 import { getStreamData } from "./api";
 import { getSubscriptionsForStreamer } from "../database/repositories/subscriptions";
 import { announceIfNewlyLive, retireLiveAnnouncements } from "../discord/liveTracking";
+import { recordStreamEnd, recordStreamStart } from "../archive/jobs";
 
 export function setupTwitchHandlers(client: Client) {
   twitchEvents.on("streamOnline", async (eventData) => {
     const login = eventData.broadcaster_user_login.toLowerCase();
     logger.info(`EVENT TRIGGERED: ${login} went live!`);
+
+    // Queued before the announcement delay below: every second waited is a
+    // second of the broadcast that cannot be recovered later. The payload's
+    // stream id and start time are also what a post-hoc VOD lookup needs.
+    recordStreamStart({
+      platform: "twitch",
+      login,
+      streamId: eventData.id,
+      startedAt: eventData.started_at,
+    });
 
     setTimeout(async () => {
       const stream = await getStreamData(login);
@@ -43,6 +54,8 @@ export function setupTwitchHandlers(client: Client) {
   twitchEvents.on("streamOffline", async (eventData) => {
     const login = eventData.broadcaster_user_login.toLowerCase();
     logger.info(`EVENT TRIGGERED: ${login} went offline!`);
+
+    recordStreamEnd("twitch", login);
 
     await retireLiveAnnouncements({
       client,
