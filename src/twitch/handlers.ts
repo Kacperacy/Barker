@@ -4,11 +4,20 @@ import { twitchEvents } from "./eventsub";
 import { getStreamData } from "./api";
 import { getSubscriptionsForStreamer } from "../database/repositories/subscriptions";
 import { announceIfNewlyLive, retireLiveAnnouncements } from "../discord/liveTracking";
+import { clearLiveBroadcast, setLiveBroadcast } from "../chat/live";
 
 export function setupTwitchHandlers(client: Client) {
   twitchEvents.on("streamOnline", async (eventData) => {
     const login = eventData.broadcaster_user_login.toLowerCase();
     logger.info(`EVENT TRIGGERED: ${login} went live!`);
+
+    // Chat rows are stamped with the broadcast they were sent during, and this
+    // go-live signal is the only thing that knows the stream id (see chat/live.ts):
+    // the chat itself is read over anonymous IRC, which has no idea about it.
+    setLiveBroadcast("twitch", login, {
+      streamId: eventData.id,
+      startedAt: eventData.started_at,
+    });
 
     setTimeout(async () => {
       const stream = await getStreamData(login);
@@ -43,6 +52,7 @@ export function setupTwitchHandlers(client: Client) {
   twitchEvents.on("streamOffline", async (eventData) => {
     const login = eventData.broadcaster_user_login.toLowerCase();
     logger.info(`EVENT TRIGGERED: ${login} went offline!`);
+    clearLiveBroadcast("twitch", login);
 
     await retireLiveAnnouncements({
       client,

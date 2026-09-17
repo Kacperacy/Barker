@@ -18,7 +18,7 @@ from. That is a platform limit, not a switch that was left off.
 ## How it fits together
 
 ```
-Twitch EventSub (WebSocket) ─┐
+Twitch IRC (anonymous) ──────┐
                              ├─► chat_messages / moderation_events (SQLite, WAL)
 Kick webhooks (HTTPS) ───────┘        │
                                       └─► GET /api/chat/* ──► klaun-live `/chat`
@@ -38,25 +38,29 @@ events, and `/api/chat/*` is what the front end reads.
 | `PUBLIC_BASE_URL` | `""` | Printed in the log as the webhook URL to register. |
 | `READ_API_TOKEN` | `""` | Empty leaves the read API public. Set it to require `Authorization: Bearer` or `?token=`. |
 | `KICK_WEBHOOK_PUBLIC_KEY` | `""` | Pin the signing key; empty fetches it from Kick and caches it for a day. |
-| `KICK_REDIRECT_URI` | `""` | Kick app redirect, used by the authorize tool. |
-| `TWITCH_REDIRECT_URI` | `http://localhost` | Twitch app redirect, used by the authorize tool. |
 
-## One-time authorization
+## No authorization needed
 
-Both platforms need a **user** token, and neither scope set is something an app
-token or a refresh can produce. The tool walks each flow and stores the result in
-the `config` table:
+This is built to be run by someone **outside** the channel — a viewer, not the
+broadcaster — so neither platform asks for an account with moderator powers:
 
-```bash
-bun run src/tools/authorize.ts twitch   # user:read:chat, channel:moderate
-bun run src/tools/authorize.ts kick     # events:subscribe
-```
+- **Twitch** is read over **anonymous IRC**: `PASS SCHMOOPIIE` with a
+  `justinfanNNNN` nick, joining the channel the way any other viewer does. No
+  token, no scopes, no OAuth app. It carries messages with their tags (badges,
+  colour, display name, reply target, and Twitch's own send timestamp), and —
+  because CLEARCHAT and CLEARMSG go to the whole room — bans, timeouts and
+  single-message deletions too. EventSub chat topics are deliberately not used:
+  they need `user:read:chat` as the broadcaster or a bot the broadcaster has
+  granted `channel:bot`, neither of which a viewer can obtain.
+- **Kick** is subscribed to with the app's own **client-credentials token**, with
+  the channel named explicitly. Kick's subscribe endpoint documents
+  `broadcaster_user_id` as required when an app access token is used — with a user
+  token the broadcaster would be inferred from the token, which only the channel's
+  owner can have.
 
-Authorize **as the channel's own account** (`klaun___0k` / `klaun-0k`): the chat
-subscriptions name that user as the reader, and Kick infers the broadcaster from
-the token. Restart the bot afterwards. On startup it logs what it found —
-"Twitch token ok", "no Kick user token", and so on — because a missing scope
-subscribes successfully and then silently delivers nothing.
+So the whole setup is configuration (`CHAT_LOG_ENABLED`, `CHAT_LOG_CHANNELS`) plus
+a public HTTPS URL for Kick's webhooks, below. Startup logs which channels it is
+following and over which transport, so an empty log is never ambiguous.
 
 ## Kick webhooks
 
@@ -102,7 +106,12 @@ schema needs to change for it.
 
 - **Kick has no unban or message-deleted event.** An unban or timeout being lifted
   is invisible, so the moderation log is asymmetric by platform, not by choice.
-- Twitch chat rows are stamped with delivery time, not send time (EventSub does
-  not send one), so offsets are accurate to within the websocket latency.
+- **Twitch's IRC says a ban happened, not who did it or why.** CLEARCHAT carries
+  the target and, for a timeout, its length in seconds — no moderator and no
+  reason, because Twitch exposes no moderation history to anyone outside the
+  channel. Both stay null.
+- The anonymous Twitch connection has no privileges, so anything a moderator sees
+  and the room does not (a whispered warning, a deleted-by-author message) never
+  reaches the log.
 - A Kick stream whose bot restart straddles a live broadcast can miss the first
   messages of that broadcast; the subscription is restored on the next check.

@@ -187,7 +187,9 @@ export const kickLivestreamStatusEventSchema = z
   .passthrough();
 
 // POST /public/v1/events/subscriptions answers per event, with `error` set on
-// the ones it refused — a partial failure that must not read as success.
+// the ones it refused — a partial failure that must not read as success. GET
+// returns the same array plus the fields that identify an existing subscription
+// (id, broadcaster, method), so one schema covers both.
 export const kickEventSubscriptionsResponseSchema = z
   .object({
     data: z
@@ -195,9 +197,13 @@ export const kickEventSubscriptionsResponseSchema = z
         z
           .object({
             name: z.string().optional(),
+            event: z.string().optional(),
             subscription_id: z.string().optional(),
+            id: z.string().optional(),
             version: z.number().optional(),
             error: z.string().optional(),
+            method: z.string().optional(),
+            broadcaster_user_id: z.number().optional(),
           })
           .passthrough(),
       )

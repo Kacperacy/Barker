@@ -1,39 +1,10 @@
 import EventEmitter from "node:events";
 import { logger } from "../utils/logger";
 import { getValidUserToken } from "./auth";
-import {
-  subscribeToEvent,
-  subscribeToChatEvent,
-  getAuthenticatedTwitchUser,
-  cleanupZombieSubscriptions,
-} from "./api";
+import { subscribeToEvent, cleanupZombieSubscriptions } from "./api";
 import { getAllUniqueStreamers } from "../database/repositories/subscriptions";
-import { isChatLogTargetFor } from "../chat/ingest";
 
 export const twitchEvents = new EventEmitter();
-
-// Chat + moderation topics, subscribed only for channels this bot logs chat for.
-// They are additional to stream.online/offline and need the reader's user id in
-// their condition, which is why they go through subscribeToChatEvent.
-export const TWITCH_CHAT_TOPICS = [
-  "channel.chat.message",
-  "channel.ban",
-  "channel.unban",
-  "channel.chat.clear",
-  "channel.chat.clear_user_messages",
-  "channel.chat.message_delete",
-] as const;
-
-// Topic name → the event this module re-emits. A table rather than a chain of
-// ifs so adding a topic cannot silently stop being dispatched.
-const TOPIC_EVENTS: Record<string, string> = {
-  "channel.chat.message": "chatMessage",
-  "channel.ban": "moderationBan",
-  "channel.unban": "moderationUnban",
-  "channel.chat.clear": "chatClear",
-  "channel.chat.clear_user_messages": "chatClearUserMessages",
-  "channel.chat.message_delete": "chatMessageDelete",
-};
 
 // Structural subset of the platform WebSocket used here, so tests can drive
 // the connection lifecycle with a fake instead of a real socket.
@@ -53,15 +24,6 @@ export interface EventSubDeps {
     eventType: string,
     sessionId: string,
   ) => Promise<void>;
-  // Chat topics need the reader's user id in their condition, so they cannot go
-  // through the same call as the stream topics.
-  subscribeChat?: (
-    login: string,
-    eventType: string,
-    sessionId: string,
-    readerUserId: string,
-  ) => Promise<void>;
-  getReaderUserId?: () => Promise<string | null>;
   listStreamers?: () => string[];
   // Slack on top of the session's keepalive_timeout before the session is
   // declared dead, covering network jitter and event-loop lag.
@@ -77,18 +39,6 @@ const MAX_RECONNECT_DELAY = 300000;
 
 type ResolvedDeps = Required<EventSubDeps>;
 
-// The token's own user, which is the reader every chat subscription names. Cached
-// because it is one account for every channel and would otherwise cost an extra
-// API call per topic per streamer.
-let readerUserId: string | null = null;
-
-async function defaultReaderUserId(): Promise<string | null> {
-  if (readerUserId) return readerUserId;
-  const user = await getAuthenticatedTwitchUser();
-  readerUserId = user?.id ?? null;
-  return readerUserId;
-}
-
 function resolveDeps(overrides: EventSubDeps): ResolvedDeps {
   return {
     beforeConnect:
@@ -101,8 +51,6 @@ function resolveDeps(overrides: EventSubDeps): ResolvedDeps {
       overrides.createWebSocket ??
       ((url) => new WebSocket(url) as unknown as WebSocketLike),
     subscribe: overrides.subscribe ?? subscribeToEvent,
-    subscribeChat: overrides.subscribeChat ?? subscribeToChatEvent,
-    getReaderUserId: overrides.getReaderUserId ?? defaultReaderUserId,
     listStreamers:
       overrides.listStreamers ?? (() => getAllUniqueStreamers("twitch")),
     keepaliveGraceMs: overrides.keepaliveGraceMs ?? KEEPALIVE_GRACE_MS,
@@ -132,24 +80,6 @@ export async function subscribeToStreamer(login: string) {
   // session we already know is gone.
   if (sessionId !== session) return;
   await deps.subscribe(login, "stream.offline", session);
-
-  if (!isChatLogTargetFor("twitch", login)) return;
-
-  // Chat and moderation ride the same socket. Without a reader id these
-  // subscriptions cannot be built at all, and a subscribe that silently does
-  // nothing is the failure mode worth shouting about.
-  const readerId = await deps.getReaderUserId();
-  if (!readerId) {
-    logger.warn(
-      `[Chat] no Twitch reader user id (token not authorized?); chat topics for ${login} were not subscribed`,
-    );
-    return;
-  }
-
-  for (const topic of TWITCH_CHAT_TOPICS) {
-    if (sessionId !== session) return;
-    await deps.subscribeChat(login, topic, session, readerId);
-  }
 }
 
 // Twitch only guarantees a live session while keepalives keep arriving. A
@@ -256,17 +186,6 @@ async function connect() {
           twitchEvents.emit("streamOnline", eventData);
         } else if (eventType === "stream.offline") {
           twitchEvents.emit("streamOffline", eventData);
-        } else {
-          const emitted = TOPIC_EVENTS[eventType];
-          if (emitted) {
-            // Chat, clear and message-delete payloads carry no event id of their
-            // own, so the notification's id travels with it and becomes the
-            // moderation row's identity — a redelivery then stays a no-op.
-            twitchEvents.emit(emitted, {
-              notificationId: msg.metadata.message_id,
-              event: eventData,
-            });
-          }
         }
       }
 

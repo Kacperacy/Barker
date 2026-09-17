@@ -10,7 +10,6 @@ import {
   twitchGamesResponseSchema,
   twitchStreamSchema,
   twitchStreamsResponseSchema,
-  twitchTokenValidationSchema,
   twitchUsersResponseSchema,
 } from "./schemas";
 
@@ -168,7 +167,7 @@ async function deleteSubscription(id: string): Promise<void> {
 
 function createSubscription(
   eventType: string,
-  condition: Record<string, string>,
+  broadcasterId: string,
   sessionId: string,
 ): Promise<Response> {
   return twitchFetch(EVENTSUB_SUBSCRIPTIONS_URL, {
@@ -177,39 +176,26 @@ function createSubscription(
     body: JSON.stringify({
       type: eventType,
       version: "1",
-      condition,
+      condition: { broadcaster_user_id: broadcasterId },
       transport: { method: "websocket", session_id: sessionId },
     }),
   });
 }
 
-// Chat and moderation topics are keyed on who is *reading* as well as the
-// channel: `user_id` for the chat.* topics, `moderator_user_id` for ban/unban.
-// Both are the token's own user — the account that authorized the bot.
-export function eventSubCondition(
-  eventType: string,
-  broadcasterId: string,
-  readerUserId: string,
-): Record<string, string> {
-  if (eventType === "channel.ban" || eventType === "channel.unban") {
-    return {
-      broadcaster_user_id: broadcasterId,
-      moderator_user_id: readerUserId,
-    };
-  }
-  return { broadcaster_user_id: broadcasterId, user_id: readerUserId };
-}
-
-async function subscribeWithCondition(
+export async function subscribeToEvent(
   login: string,
   eventType: string,
   sessionId: string,
-  condition: Record<string, string>,
-): Promise<void> {
-  let res = await createSubscription(eventType, condition, sessionId);
+) {
+  const broadcasterId = await getTwitchUserId(login);
+  if (!broadcasterId) {
+    logger.error(`Cannot find Twitch ID for ${login}`);
+    return;
+  }
+
+  let res = await createSubscription(eventType, broadcasterId, sessionId);
 
   if (res.status === 409) {
-    const broadcasterId = condition.broadcaster_user_id;
     const existing =
       (await listEventSubSubscriptions()).find(
         (sub) =>
@@ -233,7 +219,7 @@ async function subscribeWithCondition(
       await deleteSubscription(existing.id);
     }
 
-    res = await createSubscription(eventType, condition, sessionId);
+    res = await createSubscription(eventType, broadcasterId, sessionId);
   }
 
   if (res.ok) logger.info(`Subscribed to ${eventType} for ${login}`);
@@ -241,113 +227,6 @@ async function subscribeWithCondition(
     logger.error(
       `Failed to subscribe to ${eventType} for ${login}: ${await res.text()}`,
     );
-}
-
-export async function subscribeToEvent(
-  login: string,
-  eventType: string,
-  sessionId: string,
-) {
-  const broadcasterId = await getTwitchUserId(login);
-  if (!broadcasterId) {
-    logger.error(`Cannot find Twitch ID for ${login}`);
-    return;
-  }
-
-  await subscribeWithCondition(login, eventType, sessionId, {
-    broadcaster_user_id: broadcasterId,
-  });
-}
-
-// The chat log's subscriptions. `readerUserId` is the token's user, which has to
-// be the broadcaster or a moderator of the channel (with user:read:chat and, for
-// ban events, channel:moderate).
-export async function subscribeToChatEvent(
-  login: string,
-  eventType: string,
-  sessionId: string,
-  readerUserId: string,
-): Promise<void> {
-  const broadcasterId = await getTwitchUserId(login);
-  if (!broadcasterId) {
-    logger.error(`Cannot find Twitch ID for ${login}`);
-    return;
-  }
-
-  await subscribeWithCondition(
-    login,
-    eventType,
-    sessionId,
-    eventSubCondition(eventType, broadcasterId, readerUserId),
-  );
-}
-
-// Scopes the chat log needs on the stored token. A token without them subscribes
-// successfully and then never delivers anything, so the startup check reports the
-// difference rather than leaving an empty log to explain itself.
-export const TWITCH_CHAT_SCOPES = ["user:read:chat", "channel:moderate"];
-
-// Who the stored token belongs to, and which scopes it actually carries.
-export async function validateTwitchToken(): Promise<{
-  login: string | null;
-  userId: string | null;
-  scopes: string[];
-} | null> {
-  const token = await getValidUserToken();
-
-  try {
-    const res = await fetch("https://id.twitch.tv/oauth2/validate", {
-      headers: { Authorization: `OAuth ${token}` },
-    });
-    if (!res.ok) {
-      logger.error(`[Twitch] token validation failed: ${res.status}`);
-      return null;
-    }
-
-    const parsed = twitchTokenValidationSchema.safeParse(await res.json());
-    if (!parsed.success) {
-      logger.error(
-        `[Twitch] unexpected validate response: ${parsed.error.message}`,
-      );
-      return null;
-    }
-
-    return {
-      login: parsed.data.login ?? null,
-      userId: parsed.data.user_id ?? null,
-      scopes: parsed.data.scopes ?? [],
-    };
-  } catch (error) {
-    logger.error("[Twitch] token validation threw:", error);
-    return null;
-  }
-}
-
-// GET /helix/users with no parameters returns the token's own user — the reader
-// the chat subscriptions have to name.
-export async function getAuthenticatedTwitchUser(): Promise<{
-  id: string;
-  login: string;
-} | null> {
-  const res = await twitchFetch("https://api.twitch.tv/helix/users");
-  if (!res.ok) {
-    logger.error(
-      `[Twitch API] getAuthenticatedTwitchUser error: ${res.status} ${await res.text()}`,
-    );
-    return null;
-  }
-
-  const parsed = twitchUsersResponseSchema.safeParse(await res.json());
-  if (!parsed.success) {
-    logger.error(
-      `[Twitch API] getAuthenticatedTwitchUser: unexpected response shape: ${parsed.error.message}`,
-    );
-    return null;
-  }
-
-  const user = parsed.data.data[0];
-  if (!user?.id) return null;
-  return { id: user.id, login: user.login ?? "" };
 }
 
 export async function unsubscribeFromStreamerEvents(login: string) {

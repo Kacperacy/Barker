@@ -10,6 +10,7 @@ import { startDailySummaryTimer } from "../riot/summary";
 import { startKickEventSubscriptionRefresh } from "../kick/events";
 import { startChatRetention } from "../chat/retention";
 import { logChatLoggingStatus } from "../chat/diagnostics";
+import { startTwitchChatIrc } from "../twitch/chatIrc";
 
 export default (client: Client) => {
   client.once(Events.ClientReady, (readyClient) => {
@@ -23,10 +24,11 @@ export default (client: Client) => {
     startRiotPolling(client);
     startDailySummaryTimer(client);
 
-    // Chat logging: report what is actually authorized before anything tries to
-    // use it, then keep the Kick webhook subscriptions alive (Kick unsubscribes
-    // an endpoint that fails for a day).
-    void logChatLoggingStatus();
+    // Chat logging: report what is configured, then connect. Twitch is read over
+    // anonymous IRC (no account, no scopes), Kick is subscribed to with the app
+    // token — neither needs anyone to authorize as the channel's owner.
+    logChatLoggingStatus();
+    startTwitchChatIrc();
     startKickEventSubscriptionRefresh();
     startChatRetention();
   });
