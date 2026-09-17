@@ -9,6 +9,8 @@ import { logger } from "./utils/logger";
 import { db } from "./database/connection";
 import { closeEventSub } from "./twitch/eventsub";
 import { deployCommands } from "./utils/deploy-commands";
+import { startApiServer } from "./web/server";
+import { stopChatLogging } from "./chat/ingest";
 import type { Command } from "./types";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -18,6 +20,10 @@ async function shutdown(signal: string, exitCode: number): Promise<never> {
 
   try {
     closeEventSub();
+
+    // The chat buffer holds up to a second of messages; write it before the
+    // database closes or it is lost for good (no platform will resend it).
+    stopChatLogging();
 
     if (client.isReady()) {
       logger.info("Destroying Discord client...");
@@ -49,6 +55,11 @@ process.on("SIGINT", () => shutdown("SIGINT", 0));
 process.on("SIGTERM", () => shutdown("SIGTERM", 0));
 
 runMigrations();
+
+// The read API and the Kick webhook receiver share one listener: Kick's only
+// transport is a webhook, and the front end reads the log through the same
+// origin. Started before the Discord login so a port clash fails fast.
+startApiServer();
 
 const commands = new Map<string, Command>();
 const commandsPath = join(__dirname, "commands");

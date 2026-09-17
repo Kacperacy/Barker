@@ -38,6 +38,32 @@ const envSchema = z.object({
     .positive()
     .default(60000),
   KICK_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(600),
+
+  // Chat logging. Both platforms deliver chat only as it happens — Kick's public
+  // API cannot read chat at all and Twitch publishes no message history — so
+  // there is nothing to backfill from: switching this on starts the log here.
+  CHAT_LOG_ENABLED: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
+  // "<platform>:<login>,…" — see chat/targets.ts.
+  CHAT_LOG_CHANNELS: z.string().default(""),
+  // 0 keeps everything. Messages are the one table that grows with every viewer,
+  // so a busy channel eventually wants a window.
+  CHAT_LOG_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(0),
+
+  // Read API and webhook receiver (src/web/server.ts). Kick delivers events by
+  // webhook only, so this port has to be reachable from the internet through
+  // whatever reverse proxy fronts the VPS.
+  API_PORT: z.coerce.number().int().positive().default(3001),
+  // Public base URL of this API, used to print the exact webhook path to register.
+  PUBLIC_BASE_URL: z.string().default(""),
+  // Optional. When set, the read endpoints require it (`Authorization: Bearer` or
+  // `?token=`); empty leaves them public, which is how this chat is shown anyway.
+  READ_API_TOKEN: z.string().default(""),
+  // Optional pin for the Kick webhook signing key. Empty means it is fetched from
+  // https://api.kick.com/public/v1/public-key and cached.
+  KICK_WEBHOOK_PUBLIC_KEY: z.string().default(""),
 });
 
 const _env = envSchema.safeParse(process.env);

@@ -25,11 +25,13 @@ describe("runMigrations", () => {
         "blacklisted_streamers",
         "category_streamer_strikes",
         "category_subscriptions",
+        "chat_messages",
         "config",
         "live_announcements",
         "lol_last_matches",
         "lol_player_matches",
         "lol_subscriptions",
+        "moderation_events",
         "schema_migrations",
         "subscriptions",
       ].sort(),
@@ -44,7 +46,7 @@ describe("runMigrations", () => {
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as { version: number }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6]);
   });
 
   test("migration 0002 adds lp_change to lol_player_matches", () => {
@@ -151,7 +153,46 @@ describe("runMigrations", () => {
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as { version: number }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6]);
+  });
+
+  test("migration 0006 rejects a redelivered chat message and moderation event", () => {
+    const db = new Database(":memory:");
+    runMigrations(db);
+
+    // Both platforms deliver at-least-once, so the primary key has to be the
+    // thing that makes a repeat delivery a no-op.
+    const insertMessage = () =>
+      db
+        .query(
+          `INSERT INTO chat_messages (platform, message_id, broadcaster_login, sent_at, content, received_at)
+           VALUES ('twitch', 'm-1', 'alice', '2026-01-01T10:00:00Z', 'hello', '2026-01-01T10:00:01Z')`,
+        )
+        .run();
+
+    insertMessage();
+    expect(insertMessage).toThrow();
+
+    const insertEvent = () =>
+      db
+        .query(
+          `INSERT INTO moderation_events (platform, event_id, broadcaster_login, action, created_at, received_at)
+           VALUES ('kick', 'evt-1', 'alice', 'timeout', '2026-01-01T10:00:00Z', '2026-01-01T10:00:01Z')`,
+        )
+        .run();
+
+    insertEvent();
+    expect(insertEvent).toThrow();
+
+    // The same message id on the other platform is a different message.
+    expect(() =>
+      db
+        .query(
+          `INSERT INTO chat_messages (platform, message_id, broadcaster_login, sent_at, content, received_at)
+           VALUES ('kick', 'm-1', 'alice', '2026-01-01T10:00:00Z', 'hello', '2026-01-01T10:00:01Z')`,
+        )
+        .run(),
+    ).not.toThrow();
   });
 
   test("a partially-migrated database (only migration 1 recorded) only applies migration 2", () => {
