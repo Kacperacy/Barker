@@ -33,6 +33,7 @@ events, and `/api/chat/*` is what the front end reads.
 | --- | --- | --- |
 | `CHAT_LOG_ENABLED` | `false` | Master switch. |
 | `CHAT_LOG_CHANNELS` | `""` | `twitch:klaun___0k,kick:klaun-0k`. A malformed entry stops startup rather than logging a channel with holes in it. |
+| `CHAT_LOG_HIDDEN_CHANNELS` | `""` | Same format, for channels that are logged but not shown: the `/api/chat/targets` list and every `/api/chat/*` query that does not name a channel skip them, so a dev channel never appears on the site or in its totals. `?login=…` still reads one. |
 | `CHAT_LOG_RETENTION_DAYS` | `0` | `0` keeps everything. Prunes messages only; moderation rows are never dropped. |
 | `API_PORT` | `3001` | Serves the read API and the webhook. |
 | `PUBLIC_BASE_URL` | `""` | Printed in the log as the webhook URL to register. |
@@ -58,7 +59,8 @@ broadcaster — so neither platform asks for an account with moderator powers:
   token the broadcaster would be inferred from the token, which only the channel's
   owner can have.
 
-So the whole setup is configuration (`CHAT_LOG_ENABLED`, `CHAT_LOG_CHANNELS`) plus
+So the whole setup is configuration (`CHAT_LOG_ENABLED`, `CHAT_LOG_CHANNELS`,
+`CHAT_LOG_HIDDEN_CHANNELS`) plus
 a public HTTPS URL for Kick's webhooks, below. Startup logs which channels it is
 following and over which transport, so an empty log is never ambiguous.
 

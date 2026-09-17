@@ -13,7 +13,12 @@ import {
   type ModerationEventRow,
 } from "../database/repositories/moderationEvents";
 import { chatStats, moderationStats } from "../database/repositories/chatStats";
-import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
+import {
+  hiddenChatLogTargets,
+  isChatLoggingEnabled,
+  visibleChatLogTargets,
+} from "../chat/ingest";
+import type { ChatLogTarget } from "../chat/targets";
 import { handleKickWebhookRequest, type KickWebhookDeps } from "../kick/webhooks";
 
 // The read API is called from the browser through the front end's own proxy, but
@@ -49,6 +54,15 @@ function intParam(url: URL, name: string, fallback: number): number {
   if (raw === null || raw.trim() === "") return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+// A hidden channel is logged but never served: it is out of the channel list
+// below and out of every query that does not name one, so the site — which builds
+// its switch from /api/chat/targets and otherwise covers all channels — cannot
+// display it. Naming one by login is still honoured, which is how the dev channel
+// is read while it stays invisible.
+function hiddenChannelExclusions(url: URL): ChatLogTarget[] {
+  return url.searchParams.get("login") ? [] : hiddenChatLogTargets();
 }
 
 // Rows carry `badges` as JSON text; the API hands the front end a real array so
@@ -145,9 +159,14 @@ export async function handleApiRequest(
   }
 
   // Which channels are configured, so the subpage can build its channel switch
-  // from the server's own list instead of hardcoding it.
+  // from the server's own list instead of hardcoding it. Hidden channels are left
+  // out of this list and out of every unfiltered query below — together that is
+  // what keeps a dev channel off the site.
   if (url.pathname === "/api/chat/targets") {
-    return json({ enabled: isChatLoggingEnabled(), channels: chatLogTargets() });
+    return json({
+      enabled: isChatLoggingEnabled(),
+      channels: visibleChatLogTargets(),
+    });
   }
 
   if (url.pathname === "/api/chat/messages") {
@@ -160,6 +179,7 @@ export async function handleApiRequest(
         from: url.searchParams.get("from") ?? undefined,
         to: url.searchParams.get("to") ?? undefined,
         streamId: url.searchParams.get("streamId") ?? undefined,
+        excludeChannels: hiddenChannelExclusions(url),
         limit: intParam(url, "limit", 100),
         offset: intParam(url, "offset", 0),
       },
@@ -177,6 +197,7 @@ export async function handleApiRequest(
         login: url.searchParams.get("login") ?? undefined,
         action: action ? (action as ModerationAction) : undefined,
         target: url.searchParams.get("target") ?? undefined,
+        excludeChannels: hiddenChannelExclusions(url),
         from: url.searchParams.get("from") ?? undefined,
         to: url.searchParams.get("to") ?? undefined,
         limit: intParam(url, "limit", 100),
@@ -193,6 +214,7 @@ export async function handleApiRequest(
       platform: platformParam(url),
       login: url.searchParams.get("login") ?? undefined,
       days: intParam(url, "days", 30),
+      excludeChannels: hiddenChannelExclusions(url),
     };
 
     return json({

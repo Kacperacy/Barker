@@ -21,12 +21,18 @@ import {
 // stop the bot at startup, because the failure mode is a log with holes in it and
 // the messages are gone by the time anyone notices.
 let targets: ChatLogTarget[] = [];
+// Logged exactly like the others, just never served by the read API.
+let hiddenTargets: ChatLogTarget[] = [];
 if (env.CHAT_LOG_ENABLED) {
   targets = parseChatTargets(env.CHAT_LOG_CHANNELS);
+  hiddenTargets = parseChatTargets(env.CHAT_LOG_HIDDEN_CHANNELS);
   logger.info(
     `[Chat] Logging chat for ${targets.length} channel(s): ${targets
       .map((target) => `${target.platform}:${target.login}`)
-      .join(", ")}`,
+      .join(", ")}` +
+      (hiddenTargets.length > 0
+        ? ` — ${hiddenTargets.length} kept off the read API`
+        : ""),
   );
 }
 
@@ -38,8 +44,24 @@ export function isChatLogTargetFor(platform: Platform, login: string): boolean {
   return env.CHAT_LOG_ENABLED && isChatLogTarget(targets, platform, login);
 }
 
+// Everything configured, hidden channels included: what the collectors subscribe
+// to and join.
 export function chatLogTargets(): ChatLogTarget[] {
   return targets;
+}
+
+// What the read API may show (src/web/server.ts). Hiding is read-side only: the
+// channel is still joined and logged in full, it is just never offered, never
+// defaulted to and never counted, so a dev channel is invisible on the site
+// without being invisible in the log.
+export function visibleChatLogTargets(): ChatLogTarget[] {
+  return targets.filter(
+    (target) => !isChatLogTarget(hiddenTargets, target.platform, target.login),
+  );
+}
+
+export function hiddenChatLogTargets(): ChatLogTarget[] {
+  return hiddenTargets;
 }
 
 export interface IncomingChatMessage {
