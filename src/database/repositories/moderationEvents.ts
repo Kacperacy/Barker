@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { db as defaultDb } from "../connection";
 import type { Platform } from "../../types";
-import { normalizeChatLogin } from "../../chat/targets";
+import { normalizeChatLogin, type ChatLogTarget } from "../../chat/targets";
 
 // What a moderation row is. Kick only reports the ban side — there is no
 // `moderation.unbanned` event — and Twitch has separate clear/delete events, so
@@ -55,6 +55,9 @@ export interface ModerationEventFilter {
   target?: string;
   from?: string;
   to?: string;
+  // (platform, login) pairs to keep out of the result — the hidden channels from
+  // chat/ingest.ts.
+  excludeChannels?: ChatLogTarget[];
   limit?: number;
   offset?: number;
 }
@@ -122,6 +125,13 @@ function buildWhere(filter: ModerationEventFilter): {
   if (filter.target) add("target_login = ?", filter.target.trim().toLowerCase());
   if (filter.from) add("created_at >= ?", filter.from);
   if (filter.to) add("created_at <= ?", filter.to);
+  for (const hidden of filter.excludeChannels ?? []) {
+    const login = normalizeChatLogin(hidden.platform, hidden.login);
+    params.push(hidden.platform, login);
+    conditions.push(
+      `NOT (platform = ?${params.length - 1} AND broadcaster_login = ?${params.length})`,
+    );
+  }
 
   return {
     clause: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",

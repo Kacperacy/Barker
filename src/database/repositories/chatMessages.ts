@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { db as defaultDb } from "../connection";
 import type { Platform } from "../../types";
-import { normalizeChatLogin } from "../../chat/targets";
+import { normalizeChatLogin, type ChatLogTarget } from "../../chat/targets";
 
 export interface ChatMessageRow {
   platform: Platform;
@@ -46,6 +46,10 @@ export interface ChatMessageFilter {
   from?: string;
   to?: string;
   streamId?: string;
+  // (platform, login) pairs to keep out of the result — the hidden channels from
+  // chat/ingest.ts. Filtered in SQL rather than after the query so a page's rows
+  // and its total agree.
+  excludeChannels?: ChatLogTarget[];
   limit?: number;
   offset?: number;
 }
@@ -143,6 +147,13 @@ function buildWhere(filter: ChatMessageFilter): {
   if (filter.streamId) add("stream_id = ?", filter.streamId);
   if (filter.from) add("sent_at >= ?", filter.from);
   if (filter.to) add("sent_at <= ?", filter.to);
+  for (const hidden of filter.excludeChannels ?? []) {
+    const login = normalizeChatLogin(hidden.platform, hidden.login);
+    params.push(hidden.platform, login);
+    conditions.push(
+      `NOT (platform = ?${params.length - 1} AND broadcaster_login = ?${params.length})`,
+    );
+  }
   if (filter.q) add("content LIKE ? ESCAPE '\\'", likePattern(filter.q));
 
   return {
