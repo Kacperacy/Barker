@@ -15,6 +15,17 @@ export type ModerationAction =
   | "chat_clear"
   | "chat_clear_user";
 
+// The same list as a value, so the read API can validate `action` against it and
+// the OpenAPI document can enumerate it from one source of truth.
+export const MODERATION_ACTIONS: ModerationAction[] = [
+  "ban",
+  "timeout",
+  "unban",
+  "message_delete",
+  "chat_clear",
+  "chat_clear_user",
+];
+
 export interface ModerationEventRow {
   platform: Platform;
   event_id: string;
@@ -55,6 +66,8 @@ export interface ModerationEventFilter {
   target?: string;
   from?: string;
   to?: string;
+  // One broadcast, as recorded on the rows (see chat/live.ts).
+  streamId?: string;
   // (platform, login) pairs to keep out of the result — the hidden channels from
   // chat/ingest.ts.
   excludeChannels?: ChatLogTarget[];
@@ -123,6 +136,7 @@ function buildWhere(filter: ModerationEventFilter): {
   }
   if (filter.action) add("action = ?", filter.action);
   if (filter.target) add("target_login = ?", filter.target.trim().toLowerCase());
+  if (filter.streamId) add("stream_id = ?", filter.streamId);
   if (filter.from) add("created_at >= ?", filter.from);
   if (filter.to) add("created_at <= ?", filter.to);
   for (const hidden of filter.excludeChannels ?? []) {
