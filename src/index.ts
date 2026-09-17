@@ -12,6 +12,7 @@ import { deployCommands } from "./utils/deploy-commands";
 import { startApiServer } from "./web/server";
 import { stopChatLogging } from "./chat/ingest";
 import { stopTwitchChatIrc } from "./twitch/chatIrc";
+import { startStreamRecorderPolling } from "./streamrecorder/polling";
 import type { Command } from "./types";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -62,6 +63,10 @@ runMigrations();
 // transport is a webhook, and the front end reads the log through the same
 // origin. Started before the Discord login so a port clash fails fast.
 startApiServer();
+
+// StreamRecorder.io's recordings are read on a timer and stored, so the site can
+// list them beside Kick's own VODs (see streamrecorder/polling.ts).
+startStreamRecorderPolling();
 
 const commands = new Map<string, Command>();
 const commandsPath = join(__dirname, "commands");
