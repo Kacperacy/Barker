@@ -116,7 +116,10 @@ const kickEventUserSchema = z
     is_anonymous: z.boolean().optional(),
     user_id: z.number(),
     username: z.string(),
-    is_verified: z.boolean().optional(),
+    // null, not just absent: Kick sends "is_verified": null on moderation
+    // events for accounts whose verification state it will not report, and a
+    // boolean-only check rejected every ban and timeout before it was logged.
+    is_verified: z.boolean().nullable().optional(),
     profile_picture: z.string().optional(),
     channel_slug: z.string().optional(),
   })
