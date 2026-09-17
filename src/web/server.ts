@@ -35,6 +35,12 @@ import {
   type SeriesOrder,
 } from "../database/repositories/chatStats";
 import {
+  DEFAULT_VOD_PAGE,
+  listStreamRecorderVods,
+  listStoredVodChannels,
+  type StreamRecorderVodRow,
+} from "../database/repositories/streamRecorderVods";
+import {
   chatLogTargets,
   hiddenChatLogTargets,
   isChatLoggingEnabled,
@@ -224,6 +230,44 @@ function toApiModerationEvent(row: ModerationEventRow) {
     durationMinutes: row.duration_minutes,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
+  };
+}
+
+// A StreamRecorder recording as a client sees it. `playbackUrl` is only ever set
+// for a channel's newest recording and expires; `pageUrl` is what a card has to
+// fall back to when there is nothing playable inline (see the module docs in
+// streamrecorder/client.ts).
+function toApiVod(row: StreamRecorderVodRow) {
+  let resolutions: number[] = [];
+  if (row.resolutions) {
+    try {
+      const parsed: unknown = JSON.parse(row.resolutions);
+      if (Array.isArray(parsed)) {
+        resolutions = parsed.filter(
+          (value): value is number => typeof value === "number",
+        );
+      }
+    } catch {
+      resolutions = [];
+    }
+  }
+
+  return {
+    id: row.id,
+    platform: row.platform,
+    streamer: row.target,
+    title: row.title,
+    category: row.category,
+    recordedAt: row.recorded_at,
+    durationSeconds: row.duration_seconds,
+    // Their own word for the state: never mapped onto ours.
+    status: row.status,
+    poster: row.poster_url,
+    viewers: row.viewers,
+    resolutions,
+    pageUrl: row.page_url,
+    playbackUrl: row.playback_url,
+    playbackResolvedAt: row.playback_resolved_at,
   };
 }
 
@@ -423,6 +467,33 @@ async function handleRequest(
       db,
     );
     return json({ groupBy, metric, order, limit, count: rows.length, rows });
+  }
+
+  // StreamRecorder.io's recordings for the tracked channels, newest first. The
+  // bot polls their public feed and stores what it finds — this side records
+  // nothing (see streamrecorder/polling.ts). `status` is their own word for the
+  // recording's state, and `playbackUrl` is only set where a public one exists.
+  if (url.pathname === "/api/vods") {
+    const page = listStreamRecorderVods(
+      {
+        platform: platformParam(url),
+        target: url.searchParams.get("login") ?? undefined,
+        status: url.searchParams.get("status") ?? undefined,
+        from: timestampParam(url, "from"),
+        to: timestampParam(url, "to"),
+        limit: intParam(url, "limit", DEFAULT_VOD_PAGE, 1),
+        offset: intParam(url, "offset", 0),
+      },
+      db,
+    );
+
+    return json({ ...page, vods: page.vods.map(toApiVod) });
+  }
+
+  // Which channels have recordings stored, so a client can build a filter without
+  // guessing at logins.
+  if (url.pathname === "/api/vods/channels") {
+    return json({ channels: listStoredVodChannels(db) });
   }
 
   return json({ error: "not found" }, 404);
