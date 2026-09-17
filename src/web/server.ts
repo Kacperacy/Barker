@@ -35,13 +35,6 @@ import {
   type SeriesOrder,
 } from "../database/repositories/chatStats";
 import {
-  ARCHIVE_STATUSES,
-  DEFAULT_ARCHIVE_PAGE,
-  listVodArchivePage,
-  type ArchiveStatus,
-  type VodArchiveListRow,
-} from "../database/repositories/vodArchives";
-import {
   chatLogTargets,
   hiddenChatLogTargets,
   isChatLoggingEnabled,
@@ -231,33 +224,6 @@ function toApiModerationEvent(row: ModerationEventRow) {
     durationMinutes: row.duration_minutes,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
-  };
-}
-
-// An archive as a client sees it: what the recorder's status page shows, minus
-// the internals (the manifests it captured, the local part paths). `parts` is
-// what makes progress legible while a broadcast is still uploading.
-function toApiArchive(row: VodArchiveListRow) {
-  const started = Date.parse(row.started_at);
-  const ended = row.ended_at ? Date.parse(row.ended_at) : Number.NaN;
-
-  return {
-    id: row.id,
-    platform: row.platform,
-    streamer: row.streamer_login,
-    streamId: row.stream_id,
-    title: row.title,
-    startedAt: row.started_at,
-    endedAt: row.ended_at,
-    durationSeconds:
-      Number.isNaN(started) || Number.isNaN(ended)
-        ? null
-        : Math.max(0, Math.round((ended - started) / 1000)),
-    status: row.status,
-    sizeBytes: row.bytes,
-    parts: { uploaded: row.uploaded_parts, total: row.total_parts },
-    folder: row.drive_folder,
-    error: row.error,
   };
 }
 
@@ -457,27 +423,6 @@ async function handleRequest(
       db,
     );
     return json({ groupBy, metric, order, limit, count: rows.length, rows });
-  }
-
-  // Broadcasts the recorder has archived, or is archiving right now. The bot owns
-  // these rows (the recorder writes them through the same database), which is why
-  // the site can list them from here instead of also polling the recorder's own
-  // status page.
-  if (url.pathname === "/api/vods") {
-    const page = listVodArchivePage(
-      {
-        platform: platformParam(url),
-        login: url.searchParams.get("login") ?? undefined,
-        status: enumParam<ArchiveStatus>(url, "status", ARCHIVE_STATUSES),
-        from: timestampParam(url, "from"),
-        to: timestampParam(url, "to"),
-        limit: intParam(url, "limit", DEFAULT_ARCHIVE_PAGE, 1),
-        offset: intParam(url, "offset", 0),
-      },
-      db,
-    );
-
-    return json({ ...page, archives: page.archives.map(toApiArchive) });
   }
 
   return json({ error: "not found" }, 404);

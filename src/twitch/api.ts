@@ -11,7 +11,6 @@ import {
   twitchStreamSchema,
   twitchStreamsResponseSchema,
   twitchUsersResponseSchema,
-  twitchVideosResponseSchema,
 } from "./schemas";
 
 type TwitchStream = z.infer<typeof twitchStreamSchema>;
@@ -101,36 +100,6 @@ export async function getStreamData(
   }
 
   return parsed.data.data[0] ?? null;
-}
-
-// Used by the recorder's fallback path: if the broadcast still has a published
-// VOD, downloading it beats reconstructing CDN paths for a deleted one.
-export async function findArchivedVideoId(
-  login: string,
-  streamId: string,
-): Promise<string | null> {
-  const userId = await getTwitchUserId(login);
-  if (!userId) return null;
-
-  const res = await twitchFetch(
-    `https://api.twitch.tv/helix/videos?user_id=${userId}&type=archive&first=20`,
-  );
-  if (!res.ok) {
-    logger.error(
-      `[Twitch API] findArchivedVideoId error: ${res.status} ${await res.text()}`,
-    );
-    return null;
-  }
-
-  const parsed = twitchVideosResponseSchema.safeParse(await res.json());
-  if (!parsed.success) {
-    logger.error(
-      `[Twitch API] findArchivedVideoId: unexpected response shape: ${parsed.error.message}`,
-    );
-    return null;
-  }
-
-  return parsed.data.data.find((video) => video.stream_id === streamId)?.id ?? null;
 }
 
 // Twitch keys subscription uniqueness on type + condition per client ID, so

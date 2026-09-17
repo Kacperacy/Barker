@@ -16,11 +16,6 @@ import {
   MAX_MODERATION_PAGE,
   MODERATION_ACTIONS,
 } from "../database/repositories/moderationEvents";
-import {
-  ARCHIVE_STATUSES,
-  DEFAULT_ARCHIVE_PAGE,
-  MAX_ARCHIVE_PAGE,
-} from "../database/repositories/vodArchives";
 
 // The read API's contract, in one place: /api answers the index below and
 // /api/openapi.json the document, both built from this module, so the two can
@@ -94,12 +89,6 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     path: "/api/moderation/series",
     summary:
       "Moderation grouped by day, hour, weekday, target, actor, action, channel, platform or stream.",
-  },
-  {
-    method: "GET",
-    path: "/api/vods",
-    summary:
-      "Broadcasts the recorder has archived, with status, size and upload progress. `status` narrows it to one recording state.",
   },
   {
     method: "POST",
@@ -279,27 +268,6 @@ const SERIES_PARAMETERS = {
     schema: { type: "string", enum: SERIES_ORDER_VALUES, default: "value" },
     description:
       "`value` ranks by the count, `key` reads in group order (chronological for day, hour and weekday).",
-  },
-} satisfies Record<string, QueryParameter>;
-
-const ARCHIVE_PARAMETERS = {
-  status: {
-    name: "status",
-    in: "query",
-    schema: { type: "string", enum: ARCHIVE_STATUSES },
-    description:
-      "One recording state: pending, recording, ended, uploading, done, failed or recovered.",
-  },
-  limit: {
-    name: "limit",
-    in: "query",
-    schema: {
-      type: "integer",
-      minimum: 1,
-      maximum: MAX_ARCHIVE_PAGE,
-      default: DEFAULT_ARCHIVE_PAGE,
-    },
-    description: "Page size; clamped to the maximum.",
   },
 } satisfies Record<string, QueryParameter>;
 
@@ -585,57 +553,6 @@ const SCHEMAS: Record<string, unknown> = {
       windowDays: { type: "integer" },
     },
   },
-  VodArchive: {
-    type: "object",
-    required: ["id", "platform", "streamer", "status", "startedAt"],
-    properties: {
-      id: { type: "integer" },
-      platform: { type: "string", enum: PLATFORM_VALUES },
-      streamer: {
-        type: "string",
-        description: "The channel's login (Twitch) or slug (Kick).",
-      },
-      streamId: { type: "string", description: "The platform's own broadcast id." },
-      title: { type: ["string", "null"] },
-      startedAt: { type: "string", format: "date-time" },
-      endedAt: { type: ["string", "null"], format: "date-time" },
-      durationSeconds: {
-        type: ["integer", "null"],
-        description: "Null while the broadcast is still running.",
-      },
-      status: { type: "string", enum: ARCHIVE_STATUSES },
-      sizeBytes: { type: "integer", description: "Uploaded so far." },
-      parts: {
-        type: "object",
-        required: ["uploaded", "total"],
-        properties: {
-          uploaded: { type: "integer" },
-          total: { type: "integer" },
-        },
-      },
-      folder: {
-        type: ["string", "null"],
-        description: "Where the segments landed in remote storage.",
-      },
-      error: {
-        type: ["string", "null"],
-        description: "Why a capture or an upload gave up.",
-      },
-    },
-  },
-  VodArchivePage: {
-    type: "object",
-    required: ["archives", "total", "limit", "offset"],
-    properties: {
-      archives: {
-        type: "array",
-        items: { $ref: "#/components/schemas/VodArchive" },
-      },
-      total: { type: "integer" },
-      limit: { type: "integer" },
-      offset: { type: "integer" },
-    },
-  },
   ApiIndex: {
     type: "object",
     required: ["name", "version", "openapi", "endpoints"],
@@ -716,22 +633,6 @@ export function openapiDocument() {
         get: operation("Liveness and whether chat logging is on", [], "Health"),
       },
       "/api": { get: operation("The endpoint index", [], "ApiIndex") },
-      "/api/vods": {
-        get: operation(
-          "Broadcasts the recorder has archived",
-          [
-            byName("platform"),
-            byName("login"),
-            byName("from"),
-            byName("to"),
-            ARCHIVE_PARAMETERS.status,
-            ARCHIVE_PARAMETERS.limit,
-            PAGING_PARAMETERS.offset,
-          ],
-          "VodArchivePage",
-          "Recorded from go-live to offline and uploaded in segments, so the copy survives the streamer deleting the platform's own VOD. The recording states are the recorder's: pending, recording, ended, uploading, done, failed, recovered.",
-        ),
-      },
       "/api/openapi.json": {
         get: {
           summary: "This document",
