@@ -6,10 +6,8 @@ import {
   getAllUniqueStreamers,
   getSubscriptionsForStreamer,
 } from "../database/repositories/subscriptions";
-import {
-  announceIfNewlyLive,
-  retireLiveAnnouncements,
-} from "../discord/liveTracking";
+import { announceIfNewlyLive, retireLiveAnnouncements } from "../discord/liveTracking";
+import { clearLiveBroadcast, setLiveBroadcast } from "../chat/live";
 
 let isPolling = false;
 
@@ -47,6 +45,13 @@ export function startKickStreamerPolling(client: Client) {
         const stream = streamBySlug.get(slug);
 
         if (stream) {
+          // Chat rows carry the broadcast they belong to; this polling tick is
+          // what supplies the stream id (see chat/live.ts).
+          setLiveBroadcast("kick", slug, {
+            streamId: stream.id,
+            startedAt: stream.started_at,
+          });
+
           for (const sub of subs) {
             const announced = await announceIfNewlyLive({
               client,
@@ -68,6 +73,7 @@ export function startKickStreamerPolling(client: Client) {
             }
           }
         } else {
+          clearLiveBroadcast("kick", slug);
           await retireLiveAnnouncements({
             client,
             platform: "kick",
