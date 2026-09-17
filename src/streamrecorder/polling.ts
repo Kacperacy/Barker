@@ -1,16 +1,9 @@
 import { env } from "../config";
 import { logger } from "../utils/logger";
-import type { Platform } from "../types";
-import {
-  FEED_PAGE_SIZE,
-  PLATFORM_FEED_IDS,
-  channelPageUrl,
-  fetchChannelPlayback,
-  fetchLatestRecordings,
-} from "./client";
+import { channelPageUrl, fetchProfileArchive } from "./client";
 import { parseStreamRecorderTargets, type StreamRecorderTarget } from "./targets";
 import {
-  latestVodIdForTarget,
+  clearPlaybackForTarget,
   setVodPlaybackUrl,
   upsertStreamRecorderVods,
   type NewStreamRecorderVod,
@@ -36,84 +29,63 @@ export function streamRecorderTargets(): StreamRecorderTarget[] {
   return targets;
 }
 
-// Their platform label, which is what a row is stored under. The numeric feed id
-// only picks which feed to read.
-function platformFromIcon(icon: string | null | undefined): Platform | null {
-  return icon === "twitch" || icon === "kick" ? icon : null;
+// Their profile publishes a day and a "HH:mm", both UTC, and nothing finer.
+function recordedAt(day: string, time: string): string {
+  return `${day}T${time}:00Z`;
 }
 
-// One pass over the feed. The feed is global and cannot be filtered by channel,
-// so this walks a few pages per platform and keeps the rows whose channel is one
-// of ours — the poll interval is what makes catching a new recording a matter of
-// time rather than luck.
+// Their per-entry identity is only what the profile shows, so the key is built
+// from exactly that: a channel cannot record two broadcasts with the same title
+// in the same minute, and if it ever did, they would be one row.
+function vodKey(target: StreamRecorderTarget, day: string, time: string, title: string): string {
+  return `${target.platform}|${target.login}|${day}|${time}|${title}`;
+}
+
+// One pass over the tracked channels' profiles. Their global feed is deliberately
+// not used: a small channel never appears in it (measured, 800 entries deep).
 export async function pollStreamRecorderOnce(): Promise<number> {
   if (!env.STREAMRECORDER_ENABLED || targets.length === 0) return 0;
 
-  const wanted = new Set(
-    targets.map((target) => `${target.platform}:${target.login}`),
-  );
-  const platforms = Array.from(new Set(targets.map((target) => target.platform)));
-  const collected: NewStreamRecorderVod[] = [];
+  let written = 0;
 
-  for (const platform of platforms) {
-    const feedId = PLATFORM_FEED_IDS[platform];
-    if (feedId === undefined) continue;
+  for (const target of targets) {
+    const archive = await fetchProfileArchive(target.platform, target.login);
+    if (!archive || archive.recordings.length === 0) continue;
 
-    for (let page = 0; page < env.STREAMRECORDER_PAGES; page += 1) {
-      const recordings = await fetchLatestRecordings(feedId, page * FEED_PAGE_SIZE);
-      if (recordings.length === 0) break;
+    const rows: NewStreamRecorderVod[] = archive.recordings.map((recording) => ({
+      key: vodKey(target, recording.day, recording.time, recording.title),
+      platform: target.platform,
+      target: target.login,
+      title: recording.title,
+      category: recording.category,
+      recordedAt: recordedAt(recording.day, recording.time),
+      durationSeconds: recording.durationSeconds,
+      // Their own flag in words: they are recording this channel right now, or
+      // they are not.
+      status: recording.isLive ? "live" : "finished",
+      thumbnailUrl: recording.thumbnail,
+      pageUrl: channelPageUrl(target.platform, target.login),
+    }));
 
-      for (const recording of recordings) {
-        const labelled = platformFromIcon(recording.iconid) ?? platform;
-        const target = recording.target.trim().toLowerCase();
-        if (!wanted.has(`${labelled}:${target}`)) continue;
+    written += upsertStreamRecorderVods(rows);
 
-        collected.push({
-          id: recording.id,
-          platform: labelled,
-          target,
-          targetId: recording.targetid ?? null,
-          title: recording.streamtitle ?? null,
-          category: recording.streamcategory ?? null,
-          recordedAt: recording.recorded_at,
-          durationSeconds: recording.duration ?? null,
-          status: recording.status,
-          posterUrl: recording.poster ?? null,
-          pageUrl: channelPageUrl(labelled, target),
-          viewers: recording.viewers ?? null,
-          resolutions: recording.resolutions ?? null,
-        });
+    // Only the recording their own player is showing has a public source, and the
+    // URL is signed, so every pass refreshes it and drops it from the rest: an old
+    // URL would be a card that looks playable and is not.
+    if (archive.playbackUrl && archive.currentTitle) {
+      const current = rows.find((row) => row.title === archive.currentTitle);
+      if (current) {
+        setVodPlaybackUrl(current.key, archive.playbackUrl);
+        clearPlaybackForTarget(target.platform, target.login, current.key);
       }
     }
   }
 
-  if (collected.length === 0) return 0;
-
-  const written = upsertStreamRecorderVods(collected);
-  logger.info(
-    `[StreamRecorder] ${collected.length} recording(s) for our channels, ${written} row(s) written`,
-  );
-  return written;
-}
-
-// Only a channel's newest recording has public playback, and its URL is signed
-// and expires — so this re-reads the channel page on every pass and stores what
-// it finds against the row we hold for that recording.
-export async function refreshPlaybackUrls(): Promise<void> {
-  if (!env.STREAMRECORDER_ENABLED) return;
-
-  for (const target of targets) {
-    const { recordingId, playbackUrl } = await fetchChannelPlayback(
-      target.platform,
-      target.login,
-    );
-    if (recordingId === null || playbackUrl === null) continue;
-
-    const known = latestVodIdForTarget(target.platform, target.login);
-    if (known !== recordingId) continue;
-
-    setVodPlaybackUrl(recordingId, playbackUrl);
+  if (written > 0) {
+    logger.info(`[StreamRecorder] ${written} row(s) written`);
   }
+
+  return written;
 }
 
 let isPolling = false;
@@ -127,10 +99,9 @@ export function startStreamRecorderPolling(): void {
 
     try {
       await pollStreamRecorderOnce();
-      await refreshPlaybackUrls();
     } catch (error) {
-      // A poll is best-effort by nature: their site being down must not take the
-      // bot with it, and the next tick starts over.
+      // Best-effort by nature: their site being down must not take the bot with
+      // it, and the next tick starts over.
       logger.error("[StreamRecorder] Poll failed:", error);
     } finally {
       isPolling = false;

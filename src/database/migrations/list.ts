@@ -4,6 +4,7 @@ import migration0003 from "./0003_unify_live_tracking";
 import migration0004 from "./0004_add_platform_support";
 import migration0006 from "./0006_chat_logging";
 import migration0007 from "./0007_streamrecorder_vods";
+import migration0008 from "./0008_streamrecorder_vods_keys";
 import type { Migration } from "./types";
 
 // 0005 is not listed and must never be: it was applied to a deployed database by
@@ -18,5 +19,6 @@ export const migrations: Migration[] = [
   migration0004,
   migration0006,
   migration0007,
+  migration0008,
 ].sort((a, b) => a.version - b.version);
 

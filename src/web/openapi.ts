@@ -591,38 +591,38 @@ const SCHEMAS: Record<string, unknown> = {
   },
   Vod: {
     type: "object",
-    required: ["id", "platform", "streamer", "recordedAt", "status"],
+    required: ["key", "platform", "streamer", "title", "recordedAt", "status"],
     properties: {
-      id: {
-        type: "integer",
-        description: "StreamRecorder's own recording id, which is the key here.",
+      key: {
+        type: "string",
+        description:
+          "Derived from what their profile publishes (platform, channel, day, time, title): they publish no recording id per entry.",
       },
       platform: { type: "string", enum: PLATFORM_VALUES },
       streamer: { type: "string" },
-      title: { type: ["string", "null"] },
+      title: { type: "string" },
       category: { type: ["string", "null"] },
       recordedAt: {
         type: "string",
+        format: "date-time",
         description:
-          "Their timestamp, 'YYYY-MM-DD HH:mm:ss' in UTC — the channel's own time, not when we stored it.",
+          "Built from their day and time, both UTC — they publish nothing finer.",
       },
-      durationSeconds: { type: ["integer", "null"] },
+      durationSeconds: { type: "integer" },
       status: {
         type: "string",
-        description: "Their word for the recording's state, kept verbatim.",
-      },
-      poster: { type: ["string", "null"] },
-      viewers: { type: ["integer", "null"] },
-      resolutions: { type: "array", items: { type: "integer" } },
-      pageUrl: {
-        type: ["string", "null"],
         description:
-          "The channel's page on StreamRecorder, which is where a recording can be watched when there is no playback URL here.",
+          "Their state in their words: `live` while they are recording the channel, `finished` otherwise. It is the only status they publish.",
+      },
+      thumbnail: { type: ["string", "null"] },
+      pageUrl: {
+        type: "string",
+        description: "The channel's page on StreamRecorder.",
       },
       playbackUrl: {
         type: ["string", "null"],
         description:
-          "A signed MP4 that may expire; present only for a channel's newest recording, which is all StreamRecorder exposes publicly.",
+          "A signed MP4 that expires; only the recording their own player is showing has one.",
       },
       playbackResolvedAt: { type: ["string", "null"], format: "date-time" },
     },
