@@ -8,6 +8,7 @@ import {
 } from "../database/repositories/subscriptions";
 import { announceIfNewlyLive, retireLiveAnnouncements } from "../discord/liveTracking";
 import { clearLiveBroadcast, setLiveBroadcast } from "../chat/live";
+import { recordStreamEnd, recordStreamStart } from "../archive/jobs";
 
 let isPolling = false;
 
@@ -45,6 +46,16 @@ export function startKickStreamerPolling(client: Client) {
         const stream = streamBySlug.get(slug);
 
         if (stream) {
+          // Idempotent per livestream id, so re-reporting the same stream on
+          // every tick queues one archive, not one per tick.
+          recordStreamStart({
+            platform: "kick",
+            login: slug,
+            streamId: stream.id,
+            title: stream.title,
+            startedAt: stream.started_at,
+          });
+
           // Chat rows carry the broadcast they belong to; this polling tick is
           // what supplies the stream id (see chat/live.ts).
           setLiveBroadcast("kick", slug, {
@@ -74,6 +85,7 @@ export function startKickStreamerPolling(client: Client) {
           }
         } else {
           clearLiveBroadcast("kick", slug);
+          recordStreamEnd("kick", slug);
           await retireLiveAnnouncements({
             client,
             platform: "kick",

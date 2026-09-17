@@ -34,6 +34,8 @@ describe("runMigrations", () => {
         "moderation_events",
         "schema_migrations",
         "subscriptions",
+        "vod_archive_parts",
+        "vod_archives",
       ].sort(),
     );
   });
@@ -46,7 +48,7 @@ describe("runMigrations", () => {
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as { version: number }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   test("migration 0002 adds lp_change to lol_player_matches", () => {
@@ -153,7 +155,43 @@ describe("runMigrations", () => {
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as { version: number }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  test("migration 0005 rejects a duplicate archive for the same broadcast", () => {
+    const db = new Database(":memory:");
+    runMigrations(db);
+
+    const insert = () =>
+      db
+        .query(
+          `INSERT INTO vod_archives (platform, streamer_login, stream_id, started_at, status, updated_at)
+           VALUES ('twitch', 'alice', 'stream-1', '2026-01-01T00:00:00Z', 'pending', '2026-01-01T00:00:00Z')`,
+        )
+        .run();
+
+    insert();
+    expect(insert).toThrow();
+
+    // A different broadcast by the same streamer is still allowed.
+    expect(() =>
+      db
+        .query(
+          `INSERT INTO vod_archives (platform, streamer_login, stream_id, started_at, status, updated_at)
+           VALUES ('twitch', 'alice', 'stream-2', '2026-01-02T00:00:00Z', 'pending', '2026-01-02T00:00:00Z')`,
+        )
+        .run(),
+    ).not.toThrow();
+
+    // As is the same stream id on the other platform.
+    expect(() =>
+      db
+        .query(
+          `INSERT INTO vod_archives (platform, streamer_login, stream_id, started_at, status, updated_at)
+           VALUES ('kick', 'alice', 'stream-1', '2026-01-01T00:00:00Z', 'pending', '2026-01-01T00:00:00Z')`,
+        )
+        .run(),
+    ).not.toThrow();
   });
 
   test("migration 0006 rejects a redelivered chat message and moderation event", () => {
