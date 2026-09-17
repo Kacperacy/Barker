@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { db as defaultDb } from "../connection";
 import type { Platform } from "../../types";
+import { normalizeArchiveLogin } from "../../archive/targets";
 
 export type ArchiveStatus =
   | "pending" // bot recorded the go-live; recorder has not picked it up yet
@@ -10,6 +11,18 @@ export type ArchiveStatus =
   | "done" // every part is in remote storage
   | "failed" // capture or upload gave up
   | "recovered"; // no live capture, but the VOD was retrieved after the fact
+
+// The same set as a value: the read API validates `status` against it and the
+// OpenAPI document enumerates it from here, so the two cannot drift.
+export const ARCHIVE_STATUSES: ArchiveStatus[] = [
+  "pending",
+  "recording",
+  "ended",
+  "uploading",
+  "done",
+  "failed",
+  "recovered",
+];
 
 export type PartStatus = "recorded" | "uploading" | "uploaded" | "failed";
 
@@ -270,4 +283,102 @@ export function countUploadedParts(
       )
       .get(archiveId) as { count: number }
   ).count;
+}
+
+// ------------------------------------------------------------- read API
+// The listing the read API serves (src/web/server.ts). The recorder's status
+// page runs its own small query because it renders HTML; this one is the shape a
+// client gets, with the same filter vocabulary the chat endpoints use.
+
+export interface VodArchiveFilter {
+  platform?: Platform;
+  // The streamer's Twitch login or Kick slug, normalized the way the rows are.
+  login?: string;
+  status?: ArchiveStatus;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface VodArchiveListRow extends VodArchive {
+  total_parts: number;
+  uploaded_parts: number;
+}
+
+export interface VodArchivePage {
+  archives: VodArchiveListRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const DEFAULT_ARCHIVE_PAGE = 100;
+export const MAX_ARCHIVE_PAGE = 500;
+
+// One LEFT JOIN rather than a query per archive: a broadcast that has not
+// produced a segment yet still has to appear, with zero parts.
+export function listVodArchivePage(
+  filter: VodArchiveFilter = {},
+  db: Database = defaultDb,
+): VodArchivePage {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  const add = (condition: string, value: string | number) => {
+    params.push(value);
+    conditions.push(condition.replace("?", `?${params.length}`));
+  };
+
+  if (filter.platform) add("a.platform = ?", filter.platform);
+  if (filter.login) {
+    // Rows are stored normalized, so a Kick login typed with underscores has to
+    // be turned into the slug it was stored as (see archive/targets.ts).
+    const login = filter.platform
+      ? normalizeArchiveLogin(filter.platform, filter.login)
+      : filter.login.trim().toLowerCase();
+    add("a.streamer_login = ?", login);
+  }
+  if (filter.status) add("a.status = ?", filter.status);
+  if (filter.from) add("a.started_at >= ?", filter.from);
+  if (filter.to) add("a.started_at <= ?", filter.to);
+
+  const where =
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const limit = Math.min(
+    Math.max(1, filter.limit ?? DEFAULT_ARCHIVE_PAGE),
+    MAX_ARCHIVE_PAGE,
+  );
+  const offset = Math.max(0, filter.offset ?? 0);
+
+  const archives = db
+    .query(
+      `SELECT a.*,
+              COUNT(p.archive_id) AS total_parts,
+              SUM(CASE WHEN p.status = 'uploaded' THEN 1 ELSE 0 END) AS uploaded_parts
+         FROM vod_archives a
+         LEFT JOIN vod_archive_parts p ON p.archive_id = a.id
+         ${where}
+        GROUP BY a.id
+        ORDER BY a.started_at DESC, a.id DESC
+        LIMIT ?${params.length + 1} OFFSET ?${params.length + 2}`,
+    )
+    .all(...params, limit, offset) as VodArchiveListRow[];
+
+  const total = (
+    db
+      .query(`SELECT COUNT(*) AS count FROM vod_archives a ${where}`)
+      .get(...params) as { count: number }
+  ).count;
+
+  return {
+    archives: archives.map((row) => ({
+      ...row,
+      // A SUM over no parts is null, not 0.
+      uploaded_parts: row.uploaded_parts ?? 0,
+    })),
+    total,
+    limit,
+    offset,
+  };
 }

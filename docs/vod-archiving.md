@@ -96,6 +96,20 @@ The recorder serves a read-only page on `ARCHIVE_WEB_PORT`: broadcast, status
 returns the same as JSON. Expose it through nginx-proxy-manager as its own
 proxy host, with an access list if it should not be public.
 
+The bot serves those rows on its own read API as well, which is what the site
+uses — one public surface instead of two, with the same filters and paging as the
+chat endpoints:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/vods` | Broadcasts the recorder has archived, newest first. Filters: `platform`, `login` (the streamer), `status`, `from`, `to`, `limit` (≤500), `offset`. Each row carries `status`, `sizeBytes`, `parts` (`uploaded`/`total`), `endedAt`/`durationSeconds`, the `folder` the segments went to, and `error` when a capture or upload gave up. |
+| `GET /api/openapi.json` | The contract, including the recording states `pending`, `recording`, `ended`, `uploading`, `done`, `failed` and `recovered`. |
+
+Nothing in the read API serves video, and a row carries no stable playback URL
+on purpose: the manifests the recorder captures (`live_m3u8`, `vod_m3u8`) expire,
+and the segments are files in remote storage. Listing an archive is therefore
+independent of deciding how to play it back.
+
 ## VOD recovery fallback
 
 When a broadcast produced no segments — the recorder was down at go-live — it
