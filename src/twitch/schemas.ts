@@ -29,28 +29,6 @@ export const twitchStreamsResponseSchema = z
   })
   .passthrough();
 
-// `stream_id` is what ties a published VOD back to the broadcast the bot
-// recorded at go-live; without it there is no reliable way to tell which
-// archive a video belongs to.
-export const twitchVideoSchema = z
-  .object({
-    id: z.string(),
-    stream_id: z.string().nullable().optional(),
-    title: z.string().optional(),
-    created_at: z.string().optional(),
-    duration: z.string().optional(),
-  })
-  .passthrough();
-export const twitchVideosResponseSchema = z
-  .object({
-    data: z.array(twitchVideoSchema),
-    pagination: z
-      .object({ cursor: z.string().optional() })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
-
 const twitchGameSchema = z.object({ id: z.string() }).passthrough();
 export const twitchGamesResponseSchema = z
   .object({ data: z.array(twitchGameSchema) })
