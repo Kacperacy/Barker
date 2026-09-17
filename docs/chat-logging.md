@@ -86,11 +86,39 @@ posting bans into the log. Deliveries are idempotent on the platform's own ids.
 
 | Endpoint | Returns |
 | --- | --- |
+| `GET /api` | The endpoint index — enough to explore the API without reading this repository. |
+| `GET /api/openapi.json` | The same contract as an OpenAPI 3.1 document, for generating a client. |
 | `GET /health` | `{ ok, chatLogging }` |
-| `GET /api/chat/targets` | The configured channels, so the front end does not hardcode them. |
-| `GET /api/chat/messages` | `platform`, `login`, `author`, `q`, `from`, `to`, `streamId`, `limit` (≤500), `offset`. |
-| `GET /api/moderation/events` | `platform`, `login`, `action`, `target`, `from`, `to`, `limit`, `offset`. |
-| `GET /api/chat/stats` | `platform`, `login`, `days`. Chat totals plus per-day/hour buckets, top chatters, and ban/timeout counts. |
+| `GET /api/chat/targets` | The channels configured for logging, including ones that have produced nothing yet. `includeHidden` adds the hidden ones, flagged `hidden`. |
+| `GET /api/chat/messages` | `author`, `q`, paging; newest first with a `total`. |
+| `GET /api/moderation/events` | `action`, `target`, paging. |
+| `GET /api/chat/stats` | Chat totals and buckets plus ban/timeout counts in one call — the subpage's summary. |
+| `GET /api/moderation/stats` | The moderation half on its own. |
+| `GET /api/chat/series` | `groupBy` (`day`, `hour`, `weekday`, `author`, `channel`, `platform`, `stream`), `metric` (`messages`, `chatters`), `order` (`key`/`value`), `limit`. |
+| `GET /api/moderation/series` | The same for moderation: `groupBy` (`day`, `hour`, `weekday`, `target`, `actor`, `action`, `channel`, `platform`, `stream`), `metric` (`events`, `bans`, `timeouts`, `targets`). |
+
+Every read endpoint takes the same filters — `platform`, `login`, `from`, `to`,
+`streamId`, `includeHidden` — and the same window: `days` counted back from now,
+or an absolute `from`/`to`, where `from` wins. Timestamps and bounds are
+inclusive, and each row answers with the platform's own send time rather than
+when we stored it.
+
+Two series queries are worth knowing, because they are how a client finds out
+what is in the log at all: `groupBy=channel` lists every channel with a message
+count and its first and last message, and `groupBy=stream` does the same per
+broadcast — which is what a per-broadcast chat replay is built on.
+
+A parameter that is present but wrong is answered with a `400` naming it: an
+unknown `groupBy`, `action` or `platform`, a `limit` that is not a number, a
+`from` that is not a timestamp. Nothing is silently ignored, because quietly
+answering a different question than the one asked is the failure mode a public
+API cannot afford.
+
+The contract is additive-only — parameters, response fields and endpoints are
+added, never repurposed — and `/api/openapi.json` is what it is measured
+against. Hidden channels are out of `/api/chat/targets` and out of every query
+that does not pass `includeHidden`, which is what keeps a dev channel off the
+site while leaving it readable to tooling.
 
 ## Storage
 
