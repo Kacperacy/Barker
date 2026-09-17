@@ -2,42 +2,39 @@ import type { Database } from "bun:sqlite";
 import { db as defaultDb } from "../connection";
 import type { Platform } from "../../types";
 
-// Rows as stored. `status` is StreamRecorder's own word for the recording's
-// state, kept verbatim (see migration 0007).
+// Rows as stored. `status` is StreamRecorder's own state in words: "live" while
+// they are recording that channel, "finished" for everything else. It is the only
+// status they publish, and it is kept in their terms (see migration 0008).
 export interface StreamRecorderVodRow {
-  id: number;
+  key: string;
   platform: Platform;
   target: string;
-  target_id: number | null;
-  title: string | null;
+  title: string;
   category: string | null;
   recorded_at: string;
-  duration_seconds: number | null;
+  duration_seconds: number;
   status: string;
-  poster_url: string | null;
-  page_url: string | null;
+  thumbnail_url: string | null;
+  page_url: string;
   playback_url: string | null;
   playback_resolved_at: string | null;
-  viewers: number | null;
-  resolutions: string | null;
   received_at: string;
   updated_at: string;
 }
 
+// What the poller hands over. No media: a row is metadata about a recording that
+// lives on StreamRecorder's side, or has already gone from it.
 export interface NewStreamRecorderVod {
-  id: number;
+  key: string;
   platform: Platform;
   target: string;
-  targetId?: number | null;
-  title?: string | null;
+  title: string;
   category?: string | null;
   recordedAt: string;
-  durationSeconds?: number | null;
+  durationSeconds: number;
   status: string;
-  posterUrl?: string | null;
-  pageUrl?: string | null;
-  viewers?: number | null;
-  resolutions?: number[] | null;
+  thumbnailUrl?: string | null;
+  pageUrl: string;
 }
 
 export interface StreamRecorderVodFilter {
@@ -50,19 +47,18 @@ export interface StreamRecorderVodFilter {
   offset?: number;
 }
 
-export const DEFAULT_VOD_PAGE = 100;
-export const MAX_VOD_PAGE = 500;
+// A channel's profile shows what it has, so one page is normally the whole
+// archive: the default is generous rather than small.
+export const DEFAULT_VOD_PAGE = 500;
+export const MAX_VOD_PAGE = 1000;
 
 function now(): string {
   return new Date().toISOString();
 }
 
-// One statement per row inside a transaction: a poll returns a page of a global
-// feed and only the rows for our channels survive the filter, so the volume is
-// small and the conflict clause is what makes a re-poll a no-op.
-//
-// `playback_url` is deliberately untouched here: it is resolved separately and
-// expires, so an upsert must not wipe what the resolver stored.
+// One statement per row inside a transaction. `playback_url` is deliberately not
+// written here: it is resolved separately and expires, so a poll must not wipe a
+// URL that is still good.
 export function upsertStreamRecorderVods(
   vods: NewStreamRecorderVod[],
   db: Database = defaultDb,
@@ -71,18 +67,16 @@ export function upsertStreamRecorderVods(
 
   const statement = db.query(
     `INSERT INTO streamrecorder_vods
-       (id, platform, target, target_id, title, category, recorded_at,
-        duration_seconds, status, poster_url, page_url, viewers, resolutions,
-        received_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)
-     ON CONFLICT (id) DO UPDATE SET
+       (key, platform, target, title, category, recorded_at, duration_seconds,
+        status, thumbnail_url, page_url, received_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+     ON CONFLICT (key) DO UPDATE SET
        title = excluded.title,
        category = excluded.category,
        duration_seconds = excluded.duration_seconds,
        status = excluded.status,
-       poster_url = excluded.poster_url,
-       viewers = excluded.viewers,
-       resolutions = excluded.resolutions,
+       thumbnail_url = excluded.thumbnail_url,
+       page_url = excluded.page_url,
        updated_at = excluded.updated_at`,
   );
 
@@ -92,19 +86,16 @@ export function upsertStreamRecorderVods(
   const run = db.transaction((rows: NewStreamRecorderVod[]) => {
     for (const vod of rows) {
       const result = statement.run(
-        vod.id,
+        vod.key,
         vod.platform,
         vod.target,
-        vod.targetId ?? null,
-        vod.title ?? null,
+        vod.title,
         vod.category ?? null,
         vod.recordedAt,
-        vod.durationSeconds ?? null,
+        vod.durationSeconds,
         vod.status,
-        vod.posterUrl ?? null,
-        vod.pageUrl ?? null,
-        vod.viewers ?? null,
-        vod.resolutions ? JSON.stringify(vod.resolutions) : null,
+        vod.thumbnailUrl ?? null,
+        vod.pageUrl,
         timestamp,
       );
       written += result.changes;
@@ -115,46 +106,32 @@ export function upsertStreamRecorderVods(
   return written;
 }
 
-// The signed MP4 of a channel's newest recording, refreshed by the poller. Kept
-// apart from the upsert because it comes from the channel's page, not the feed.
+// The signed MP4 of the recording the profile's player is showing. Only that one
+// recording has a public source, so the poller sets it here and clears it from the
+// channel's other rows (see clearPlaybackForTarget).
 export function setVodPlaybackUrl(
-  id: number,
-  playbackUrl: string | null,
+  key: string,
+  playbackUrl: string,
   db: Database = defaultDb,
 ): void {
   db.query(
     `UPDATE streamrecorder_vods
         SET playback_url = ?1, playback_resolved_at = ?2, updated_at = ?2
-      WHERE id = ?3`,
-  ).run(playbackUrl, now(), id);
+      WHERE key = ?3`,
+  ).run(playbackUrl, now(), key);
 }
 
-export function getStreamRecorderVod(
-  id: number,
-  db: Database = defaultDb,
-): StreamRecorderVodRow | null {
-  return (db
-    .query("SELECT * FROM streamrecorder_vods WHERE id = ?1")
-    .get(id) ?? null) as StreamRecorderVodRow | null;
-}
-
-// The id we hold for a channel's newest recording — the only one whose playback
-// a public page exposes.
-export function latestVodIdForTarget(
+export function clearPlaybackForTarget(
   platform: Platform,
   target: string,
+  keepKey: string,
   db: Database = defaultDb,
-): number | null {
-  const row = db
-    .query(
-      `SELECT id FROM streamrecorder_vods
-        WHERE platform = ?1 AND target = ?2
-        ORDER BY recorded_at DESC, id DESC
-        LIMIT 1`,
-    )
-    .get(platform, target) as { id: number } | null;
-
-  return row?.id ?? null;
+): void {
+  db.query(
+    `UPDATE streamrecorder_vods
+        SET playback_url = NULL, playback_resolved_at = NULL, updated_at = ?1
+      WHERE platform = ?2 AND target = ?3 AND key != ?4 AND playback_url IS NOT NULL`,
+  ).run(now(), platform, target, keepKey);
 }
 
 export interface StreamRecorderVodPage {
@@ -193,7 +170,7 @@ export function listStreamRecorderVods(
   const vods = db
     .query(
       `SELECT * FROM streamrecorder_vods ${where}
-        ORDER BY recorded_at DESC, id DESC
+        ORDER BY recorded_at DESC, key DESC
         LIMIT ?${params.length + 1} OFFSET ?${params.length + 2}`,
     )
     .all(...params, limit, offset) as StreamRecorderVodRow[];
@@ -207,8 +184,8 @@ export function listStreamRecorderVods(
   return { vods, total, limit, offset };
 }
 
-// What the poller has collected, for a startup log or for a caller that wants to
-// know which channels have recordings.
+// Which channels have recordings stored, with counts: what the startup log and a
+// client building a filter both want.
 export function listStoredVodChannels(
   db: Database = defaultDb,
 ): { platform: Platform; target: string; vods: number }[] {

@@ -47,7 +47,7 @@ describe("runMigrations", () => {
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as { version: number }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6, 7]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6, 7, 8]);
   });
 
   test("migration 0002 adds lp_change to lol_player_matches", () => {
@@ -154,7 +154,7 @@ describe("runMigrations", () => {
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as { version: number }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6, 7]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 6, 7, 8]);
   });
 
   test("migration 0006 rejects a redelivered chat message and moderation event", () => {

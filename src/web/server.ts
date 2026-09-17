@@ -233,38 +233,22 @@ function toApiModerationEvent(row: ModerationEventRow) {
   };
 }
 
-// A StreamRecorder recording as a client sees it. `playbackUrl` is only ever set
-// for a channel's newest recording and expires; `pageUrl` is what a card has to
-// fall back to when there is nothing playable inline (see the module docs in
-// streamrecorder/client.ts).
+// A StreamRecorder recording as a client sees it: the information their profile
+// publishes, kept here so the site does not have to read their HTML. No media is
+// stored — `playbackUrl` is a signed URL that expires, and only the recording
+// their player is showing has one.
 function toApiVod(row: StreamRecorderVodRow) {
-  let resolutions: number[] = [];
-  if (row.resolutions) {
-    try {
-      const parsed: unknown = JSON.parse(row.resolutions);
-      if (Array.isArray(parsed)) {
-        resolutions = parsed.filter(
-          (value): value is number => typeof value === "number",
-        );
-      }
-    } catch {
-      resolutions = [];
-    }
-  }
-
   return {
-    id: row.id,
+    key: row.key,
     platform: row.platform,
     streamer: row.target,
     title: row.title,
     category: row.category,
     recordedAt: row.recorded_at,
     durationSeconds: row.duration_seconds,
-    // Their own word for the state: never mapped onto ours.
+    // Their own word for the state: "live" while recording, "finished" otherwise.
     status: row.status,
-    poster: row.poster_url,
-    viewers: row.viewers,
-    resolutions,
+    thumbnail: row.thumbnail_url,
     pageUrl: row.page_url,
     playbackUrl: row.playback_url,
     playbackResolvedAt: row.playback_resolved_at,
