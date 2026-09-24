@@ -3,8 +3,9 @@ import { db as defaultDb } from "../connection";
 import type { Platform } from "../../types";
 import { normalizeChatLogin } from "../../chat/targets";
 
-// What a moderation row is. Kick only reports the ban side — there is no
-// `moderation.unbanned` event — and Twitch has separate clear/delete events, so
+// What a moderation row is. Kick's webhooks only report bans; its chat socket
+// (kick/chatSocket.ts) adds deletions, unbans and clears. Twitch has separate
+// clear/delete events, so
 // the union is deliberately a plain string in the schema rather than a DB
 // CHECK constraint that would reject a new action after a platform update.
 export type ModerationAction =
@@ -35,6 +36,8 @@ export interface ModerationEventRow {
   target_user_id: string | null;
   target_login: string | null;
   target_display: string | null;
+  // The message a `message_delete` removed.
+  target_message_id: string | null;
   actor_login: string | null;
   reason: string | null;
   duration_minutes: number | null;
@@ -52,6 +55,7 @@ export interface NewModerationEvent {
   targetUserId?: string | null;
   targetLogin?: string | null;
   targetDisplay?: string | null;
+  targetMessageId?: string | null;
   actorLogin?: string | null;
   reason?: string | null;
   durationMinutes?: number | null;
@@ -88,8 +92,8 @@ export function insertModerationEvent(
       `INSERT INTO moderation_events
          (platform, event_id, broadcaster_login, stream_id, action, target_user_id,
           target_login, target_display, actor_login, reason, duration_minutes,
-          expires_at, created_at, received_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+          expires_at, created_at, received_at, target_message_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
        ON CONFLICT (platform, event_id) DO NOTHING`,
     )
     .run(
@@ -107,6 +111,7 @@ export function insertModerationEvent(
       event.expiresAt ?? null,
       event.createdAt,
       new Date().toISOString(),
+      event.targetMessageId ?? null,
     );
 
   return result.changes > 0;

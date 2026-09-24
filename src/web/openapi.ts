@@ -341,6 +341,15 @@ const SCHEMAS: Record<string, unknown> = {
         type: ["string", "null"],
         description: "Message id this replies to, when the platform says so.",
       },
+      deleted: {
+        type: ["object", "null"],
+        description:
+          "Set when a moderator removed the message. `by` is null where the platform does not name who (Twitch IRC, Kick's chat socket).",
+        properties: {
+          at: { type: "string", format: "date-time" },
+          by: { type: ["string", "null"] },
+        },
+      },
     },
   },
   ChatMessagePage: {
@@ -375,6 +384,10 @@ const SCHEMAS: Record<string, unknown> = {
           login: { type: ["string", "null"] },
           display: { type: ["string", "null"] },
         },
+      },
+      targetMessageId: {
+        type: ["string", "null"],
+        description: "For message_delete: the id of the message that was removed.",
       },
       actor: {
         type: ["string", "null"],

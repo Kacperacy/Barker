@@ -157,6 +157,7 @@ describe("handleIrcLine", () => {
       action: "message_delete",
       target_login: "troll",
       event_id: "delete:abc-123",
+      target_message_id: "abc-123",
     });
   });
 

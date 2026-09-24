@@ -7,6 +7,7 @@ import migration0007 from "./0007_streamrecorder_vods";
 import migration0008 from "./0008_streamrecorder_vods_keys";
 import migration0009 from "./0009_chat_log_cleanup";
 import migration0010 from "./0010_drop_streamrecorder_vods";
+import migration0011 from "./0011_moderation_target_message";
 import type { Migration } from "./types";
 
 // 0005 is not listed and must never be: it was applied to a deployed database by
@@ -24,5 +25,6 @@ export const migrations: Migration[] = [
   migration0008,
   migration0009,
   migration0010,
+  migration0011,
 ].sort((a, b) => a.version - b.version);
 

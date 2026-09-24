@@ -6,7 +6,7 @@ import { db as defaultDb } from "../database/connection";
 import {
   DEFAULT_CHAT_PAGE,
   listChatMessages,
-  type ChatMessageRow,
+  type ListedChatMessageRow,
 } from "../database/repositories/chatMessages";
 import {
   DEFAULT_MODERATION_PAGE,
@@ -162,7 +162,7 @@ function windowFilter(url: URL) {
 
 // Rows carry `badges` as JSON text; the API hands the front end a real array so
 // it never has to parse a database detail.
-function toApiMessage(row: ChatMessageRow) {
+function toApiMessage(row: ListedChatMessageRow) {
   let badges: string[] = [];
   if (row.badges) {
     try {
@@ -189,6 +189,9 @@ function toApiMessage(row: ChatMessageRow) {
     },
     content: row.content,
     replyTo: row.reply_to_message_id,
+    // Set when a moderator removed the message; `by` is null where the platform
+    // does not say who (Twitch IRC, Kick's chat socket).
+    deleted: row.deleted_at ? { at: row.deleted_at, by: row.deleted_by } : null,
   };
 }
 
@@ -204,6 +207,7 @@ function toApiModerationEvent(row: ModerationEventRow) {
       login: row.target_login,
       display: row.target_display,
     },
+    targetMessageId: row.target_message_id,
     actor: row.actor_login,
     reason: row.reason,
     durationMinutes: row.duration_minutes,
