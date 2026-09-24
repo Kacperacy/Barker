@@ -65,6 +65,15 @@ async function fetchPublicKey(): Promise<string | null> {
   }
 }
 
+// Kick fills an empty reason with this placeholder text; stored as-is it reads
+// like a reason someone gave.
+const KICK_NO_REASON = "no reason provided";
+
+function kickReason(reason: string | null | undefined): string | null {
+  const text = reason?.trim() ?? "";
+  return text === "" || text.toLowerCase() === KICK_NO_REASON ? null : text;
+}
+
 export function verifyKickSignature(input: {
   messageId: string | null;
   timestamp: string | null;
@@ -188,7 +197,7 @@ function handleModerationBanned(
     actorLogin: event.moderator
       ? (event.moderator.channel_slug ?? event.moderator.username).toLowerCase()
       : null,
-    reason: event.metadata.reason ?? null,
+    reason: kickReason(event.metadata.reason),
     durationMinutes: details.durationMinutes,
     expiresAt,
   });
