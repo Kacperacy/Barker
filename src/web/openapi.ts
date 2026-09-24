@@ -16,10 +16,6 @@ import {
   MAX_MODERATION_PAGE,
   MODERATION_ACTIONS,
 } from "../database/repositories/moderationEvents";
-import {
-  DEFAULT_VOD_PAGE,
-  MAX_VOD_PAGE,
-} from "../database/repositories/streamRecorderVods";
 
 // The read API's contract, in one place: /api answers the index below and
 // /api/openapi.json the document, both built from this module, so the two can
@@ -93,17 +89,6 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     path: "/api/moderation/series",
     summary:
       "Moderation grouped by day, hour, weekday, target, actor, action, channel, platform or stream.",
-  },
-  {
-    method: "GET",
-    path: "/api/vods",
-    summary:
-      "StreamRecorder.io's recordings for the tracked channels, newest first, each with its own status. A playback URL is present only where StreamRecorder publishes one.",
-  },
-  {
-    method: "GET",
-    path: "/api/vods/channels",
-    summary: "Which channels have recordings stored, with counts.",
   },
   {
     method: "POST",
@@ -276,27 +261,6 @@ const SERIES_PARAMETERS = {
     schema: { type: "string", enum: SERIES_ORDER_VALUES, default: "value" },
     description:
       "`value` ranks by the count, `key` reads in group order (chronological for day, hour and weekday).",
-  },
-} satisfies Record<string, QueryParameter>;
-
-const VOD_PARAMETERS = {
-  status: {
-    name: "status",
-    in: "query",
-    schema: { type: "string" },
-    description:
-      "One recording state, in StreamRecorder's own words: most rows are `finished`, an in-progress recording says so. Deliberately not an enum — their vocabulary is theirs to extend, and a state we do not know has to be askable.",
-  },
-  limit: {
-    name: "limit",
-    in: "query",
-    schema: {
-      type: "integer",
-      minimum: 1,
-      maximum: MAX_VOD_PAGE,
-      default: DEFAULT_VOD_PAGE,
-    },
-    description: "Page size; clamped to the maximum.",
   },
 } satisfies Record<string, QueryParameter>;
 
@@ -577,72 +541,6 @@ const SCHEMAS: Record<string, unknown> = {
       windowDays: { type: "integer" },
     },
   },
-  Vod: {
-    type: "object",
-    required: ["key", "platform", "streamer", "title", "recordedAt", "status"],
-    properties: {
-      key: {
-        type: "string",
-        description:
-          "Derived from what their profile publishes (platform, channel, day, time, title): they publish no recording id per entry.",
-      },
-      platform: { type: "string", enum: PLATFORM_VALUES },
-      streamer: { type: "string" },
-      title: { type: "string" },
-      category: { type: ["string", "null"] },
-      recordedAt: {
-        type: "string",
-        format: "date-time",
-        description:
-          "Built from their day and time, both UTC — they publish nothing finer.",
-      },
-      durationSeconds: { type: "integer" },
-      status: {
-        type: "string",
-        description:
-          "Their state in their words: `live` while they are recording the channel, `finished` otherwise. It is the only status they publish.",
-      },
-      thumbnail: { type: ["string", "null"] },
-      pageUrl: {
-        type: "string",
-        description: "The channel's page on StreamRecorder.",
-      },
-      playbackUrl: {
-        type: ["string", "null"],
-        description:
-          "A signed MP4 that expires; only the recording their own player is showing has one.",
-      },
-      playbackResolvedAt: { type: ["string", "null"], format: "date-time" },
-    },
-  },
-  VodPage: {
-    type: "object",
-    required: ["vods", "total", "limit", "offset"],
-    properties: {
-      vods: { type: "array", items: { $ref: "#/components/schemas/Vod" } },
-      total: { type: "integer" },
-      limit: { type: "integer" },
-      offset: { type: "integer" },
-    },
-  },
-  VodChannels: {
-    type: "object",
-    required: ["channels"],
-    properties: {
-      channels: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["platform", "target", "vods"],
-          properties: {
-            platform: { type: "string", enum: PLATFORM_VALUES },
-            target: { type: "string" },
-            vods: { type: "integer" },
-          },
-        },
-      },
-    },
-  },
   ApiIndex: {
     type: "object",
     required: ["name", "version", "openapi", "endpoints"],
@@ -723,25 +621,6 @@ export function openapiDocument() {
         get: operation("Liveness and whether chat logging is on", [], "Health"),
       },
       "/api": { get: operation("The endpoint index", [], "ApiIndex") },
-      "/api/vods": {
-        get: operation(
-          "StreamRecorder.io recordings for the tracked channels",
-          [
-            byName("platform"),
-            byName("login"),
-            byName("from"),
-            byName("to"),
-            VOD_PARAMETERS.status,
-            VOD_PARAMETERS.limit,
-            PAGING_PARAMETERS.offset,
-          ],
-          "VodPage",
-          "The bot reads StreamRecorder's public feed and stores what it finds for the channels in STREAMRECORDER_CHANNELS — nothing is recorded on this side. A row carries StreamRecorder's own status and, only where they publish one, a playback URL (their channel page exposes the newest recording's signed MP4, which expires).",
-        ),
-      },
-      "/api/vods/channels": {
-        get: operation("Channels with stored recordings", [], "VodChannels"),
-      },
       "/api/openapi.json": {
         get: {
           summary: "This document",

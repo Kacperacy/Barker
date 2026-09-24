@@ -34,12 +34,6 @@ import {
   type ModerationMetric,
   type SeriesOrder,
 } from "../database/repositories/chatStats";
-import {
-  DEFAULT_VOD_PAGE,
-  listStreamRecorderVods,
-  listStoredVodChannels,
-  type StreamRecorderVodRow,
-} from "../database/repositories/streamRecorderVods";
 import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
 import { handleKickWebhookRequest, type KickWebhookDeps } from "../kick/webhooks";
 import { API_ENDPOINTS, API_VERSION, openapiDocument } from "./openapi";
@@ -215,28 +209,6 @@ function toApiModerationEvent(row: ModerationEventRow) {
     durationMinutes: row.duration_minutes,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
-  };
-}
-
-// A StreamRecorder recording as a client sees it: the information their profile
-// publishes, kept here so the site does not have to read their HTML. No media is
-// stored — `playbackUrl` is a signed URL that expires, and only the recording
-// their player is showing has one.
-function toApiVod(row: StreamRecorderVodRow) {
-  return {
-    key: row.key,
-    platform: row.platform,
-    streamer: row.target,
-    title: row.title,
-    category: row.category,
-    recordedAt: row.recorded_at,
-    durationSeconds: row.duration_seconds,
-    // Their own word for the state: "live" while recording, "finished" otherwise.
-    status: row.status,
-    thumbnail: row.thumbnail_url,
-    pageUrl: row.page_url,
-    playbackUrl: row.playback_url,
-    playbackResolvedAt: row.playback_resolved_at,
   };
 }
 
@@ -422,33 +394,6 @@ async function handleRequest(
       db,
     );
     return json({ groupBy, metric, order, limit, count: rows.length, rows });
-  }
-
-  // StreamRecorder.io's recordings for the tracked channels, newest first. The
-  // bot polls their public feed and stores what it finds — this side records
-  // nothing (see streamrecorder/polling.ts). `status` is their own word for the
-  // recording's state, and `playbackUrl` is only set where a public one exists.
-  if (url.pathname === "/api/vods") {
-    const page = listStreamRecorderVods(
-      {
-        platform: platformParam(url),
-        target: url.searchParams.get("login") ?? undefined,
-        status: url.searchParams.get("status") ?? undefined,
-        from: timestampParam(url, "from"),
-        to: timestampParam(url, "to"),
-        limit: intParam(url, "limit", DEFAULT_VOD_PAGE, 1),
-        offset: intParam(url, "offset", 0),
-      },
-      db,
-    );
-
-    return json({ ...page, vods: page.vods.map(toApiVod) });
-  }
-
-  // Which channels have recordings stored, so a client can build a filter without
-  // guessing at logins.
-  if (url.pathname === "/api/vods/channels") {
-    return json({ channels: listStoredVodChannels(db) });
   }
 
   return json({ error: "not found" }, 404);
