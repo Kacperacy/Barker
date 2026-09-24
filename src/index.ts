@@ -12,6 +12,7 @@ import { deployCommands } from "./utils/deploy-commands";
 import { startApiServer } from "./web/server";
 import { stopChatLogging } from "./chat/ingest";
 import { stopTwitchChatIrc } from "./twitch/chatIrc";
+import { stopKickChatSocket } from "./kick/chatSocket";
 import type { Command } from "./types";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -22,6 +23,7 @@ async function shutdown(signal: string, exitCode: number): Promise<never> {
   try {
     closeEventSub();
     stopTwitchChatIrc();
+    stopKickChatSocket();
 
     // The chat buffer holds up to a second of messages; write it before the
     // database closes or it is lost for good (no platform will resend it).
