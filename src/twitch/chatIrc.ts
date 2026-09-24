@@ -234,6 +234,7 @@ export function handleIrcLine(line: string): IrcLineResult {
       createdAt: sentAtFromTags(parsed.tags) ?? new Date().toISOString(),
       action: "message_delete",
       targetLogin: (parsed.tags["login"] ?? "").toLowerCase() || null,
+      targetMessageId: parsed.tags["target-msg-id"] ?? null,
       reason: null,
       durationMinutes: null,
       expiresAt: null,

@@ -8,8 +8,10 @@ import { startKickCategoryPolling } from "../kick/categoryPolling";
 import { startRiotPolling } from "../riot/polling";
 import { startDailySummaryTimer } from "../riot/summary";
 import { startKickEventSubscriptionRefresh } from "../kick/events";
+import { startKickChatSocket } from "../kick/chatSocket";
 import { startChatRetention } from "../chat/retention";
 import { logChatLoggingStatus } from "../chat/diagnostics";
+import { isChatLoggingEnabled } from "../chat/ingest";
 import { startTwitchChatIrc } from "../twitch/chatIrc";
 
 export default (client: Client) => {
@@ -26,10 +28,12 @@ export default (client: Client) => {
 
     // Chat logging: report what is configured, then connect. Twitch is read over
     // anonymous IRC (no account, no scopes), Kick is subscribed to with the app
-    // token — neither needs anyone to authorize as the channel's owner.
+    // token — neither needs anyone to authorize as the channel's owner. Kick's
+    // chat socket adds the deletions, unbans and clears its webhooks omit.
     logChatLoggingStatus();
     startTwitchChatIrc();
     startKickEventSubscriptionRefresh();
+    if (isChatLoggingEnabled()) void startKickChatSocket();
     startChatRetention();
   });
 };

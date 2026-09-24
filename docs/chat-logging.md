@@ -80,6 +80,21 @@ Every delivery is verified against Kick's RSA public key over
 is rejected with 401/503 and nothing is written — the alternative is a stranger
 posting bans into the log. Deliveries are idempotent on the platform's own ids.
 
+## Kick chat socket
+
+Kick's webhooks have no event for a deleted message, a lifted ban or a cleared
+chat. Its own chat client learns those from a public, anonymous Pusher socket
+(`chatrooms.<chatroom id>.v2`), and `src/kick/chatSocket.ts` listens to the same
+socket for exactly those three events — `MessageDeletedEvent`,
+`UserUnbannedEvent`, `ChatroomClearEvent`. Messages and bans keep coming from the
+signed webhooks, which carry the reason and the moderator.
+
+The chatroom id comes from `kick.com/api/v2/channels/<slug>`, the endpoint Kick's
+site reads; a channel that cannot be resolved is retried every ten minutes. The
+socket is undocumented, so if Kick changes it the log quietly falls back to what
+the webhooks deliver. A deletion names the message but not the moderator, so its
+`actor` is null.
+
 ## Endpoints
 
 | Endpoint | Returns |
@@ -88,7 +103,7 @@ posting bans into the log. Deliveries are idempotent on the platform's own ids.
 | `GET /api/openapi.json` | The same contract as an OpenAPI 3.1 document, for generating a client. |
 | `GET /health` | `{ ok, chatLogging }` |
 | `GET /api/chat/targets` | The channels configured for logging, including ones that have produced nothing yet. |
-| `GET /api/chat/messages` | `author` (login or display name, case-insensitive), `q`, paging; newest first with a `total`. |
+| `GET /api/chat/messages` | `author` (login or display name, case-insensitive), `q`, paging; newest first with a `total`. A removed message carries `deleted: { at, by }`. |
 | `GET /api/moderation/events` | `action`, `target` (login or display name), paging. |
 | `GET /api/chat/stats` | Chat totals and buckets plus ban/timeout counts in one call — the subpage's summary. |
 | `GET /api/moderation/stats` | The moderation half on its own. |
@@ -133,8 +148,8 @@ schema needs to change for it.
 
 ## Known limitations
 
-- **Kick has no unban or message-deleted event.** An unban or timeout being lifted
-  is invisible, so the moderation log is asymmetric by platform, not by choice.
+- **Kick deletions, unbans and clears come from an undocumented socket** (see
+  above), and a deletion does not say who made it.
 - **Twitch's IRC says a ban happened, not who did it or why.** CLEARCHAT carries
   the target and, for a timeout, its length in seconds — no moderator and no
   reason, because Twitch exposes no moderation history to anyone outside the

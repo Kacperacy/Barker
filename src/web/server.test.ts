@@ -104,6 +104,7 @@ describe("GET /api/chat/messages", () => {
       },
       content: "second",
       replyTo: null,
+      deleted: null,
     });
   });
 
@@ -165,6 +166,7 @@ describe("GET /api/moderation/events", () => {
       streamId: null,
       action: "timeout",
       target: { id: "2", login: "bob", display: "Bob" },
+      targetMessageId: null,
       actor: "mod",
       reason: "caps",
       durationMinutes: 10,

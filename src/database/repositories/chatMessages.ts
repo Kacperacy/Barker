@@ -21,6 +21,12 @@ export interface ChatMessageRow {
   received_at: string;
 }
 
+// A listed message, with the deletion that removed it when there was one.
+export interface ListedChatMessageRow extends ChatMessageRow {
+  deleted_at: string | null;
+  deleted_by: string | null;
+}
+
 export interface NewChatMessage {
   platform: Platform;
   messageId: string;
@@ -171,13 +177,19 @@ function buildWhere(filter: ChatMessageFilter): {
 }
 
 export interface ChatMessagePage {
-  messages: ChatMessageRow[];
+  messages: ListedChatMessageRow[];
   total: number;
   // Echoed back so a caller paging through the log can see the clamp the
   // repository actually applied.
   limit: number;
   offset: number;
 }
+
+const DELETION_FROM = `FROM moderation_events d
+  WHERE d.platform = chat_messages.platform
+    AND d.target_message_id = chat_messages.message_id
+    AND d.action = 'message_delete'
+  LIMIT 1`;
 
 export function listChatMessages(
   filter: ChatMessageFilter = {},
@@ -191,14 +203,19 @@ export function listChatMessages(
   const offset = Math.max(0, filter.offset ?? 0);
 
   // Newest first, with the message id as the tie-breaker: two messages can share
-  // a timestamp, and without it paging could repeat or skip a row.
+  // a timestamp, and without it paging could repeat or skip a row. A deletion is
+  // looked up per row (a subquery rather than a join, so the shared filters keep
+  // their unqualified column names); its event id is unique per message.
   const messages = db
     .query(
-      `SELECT * FROM chat_messages ${clause}
+      `SELECT chat_messages.*,
+              (SELECT created_at ${DELETION_FROM}) AS deleted_at,
+              (SELECT actor_login ${DELETION_FROM}) AS deleted_by
+         FROM chat_messages ${clause}
        ORDER BY sent_at DESC, message_id DESC
        LIMIT ?${params.length + 1} OFFSET ?${params.length + 2}`,
     )
-    .all(...params, limit, offset) as ChatMessageRow[];
+    .all(...params, limit, offset) as ListedChatMessageRow[];
 
   const total = (
     db
@@ -207,6 +224,24 @@ export function listChatMessages(
   ).count;
 
   return { messages, total, limit, offset };
+}
+
+// Who sent one message, for a deletion event that names only the message.
+export function findChatMessageSender(
+  platform: Platform,
+  messageId: string,
+  db: Database = defaultDb,
+): { userId: string | null; login: string | null; display: string | null } | null {
+  const row = db
+    .query(
+      `SELECT sender_user_id, sender_login, sender_display
+         FROM chat_messages WHERE platform = ?1 AND message_id = ?2`,
+    )
+    .get(platform, messageId) as
+    | { sender_user_id: string | null; sender_login: string | null; sender_display: string | null }
+    | null;
+  if (!row) return null;
+  return { userId: row.sender_user_id, login: row.sender_login, display: row.sender_display };
 }
 
 // Retention. Chat is the one table that grows with every viewer message, so a

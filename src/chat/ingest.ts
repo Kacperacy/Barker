@@ -67,6 +67,7 @@ export interface IncomingModerationEvent {
   targetUserId?: string | null;
   targetLogin?: string | null;
   targetDisplay?: string | null;
+  targetMessageId?: string | null;
   actorLogin?: string | null;
   reason?: string | null;
   durationMinutes?: number | null;
@@ -166,6 +167,7 @@ export function saveModerationEvent(event: IncomingModerationEvent): boolean {
       targetUserId: event.targetUserId ?? null,
       targetLogin: event.targetLogin ?? null,
       targetDisplay: event.targetDisplay ?? null,
+      targetMessageId: event.targetMessageId ?? null,
       actorLogin: event.actorLogin ?? null,
       reason: event.reason ?? null,
       durationMinutes: event.durationMinutes ?? null,
