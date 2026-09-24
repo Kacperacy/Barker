@@ -55,23 +55,6 @@ const envSchema = z.object({
   // so a busy channel eventually wants a window.
   CHAT_LOG_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(0),
 
-  // StreamRecorder.io. This side only reads their public feed and stores what it
-  // finds: nothing is recorded by this bot (see streamrecorder/polling.ts).
-  STREAMRECORDER_ENABLED: z
-    .string()
-    .default("false")
-    .transform((v) => v === "true" || v === "1"),
-  // "<platform>:<login>,…" — see streamrecorder/targets.ts.
-  STREAMRECORDER_CHANNELS: z.string().default(""),
-  // Their feed is global and cannot be filtered by channel, so a pass walks this
-  // many pages per platform (20 recordings each) looking for our channels.
-  STREAMRECORDER_PAGES: z.coerce.number().int().positive().default(3),
-  STREAMRECORDER_POLL_INTERVAL_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(120000),
-
   // Read API and webhook receiver (src/web/server.ts). Kick delivers events by
   // webhook only, so this port has to be reachable from the internet through
   // whatever reverse proxy fronts the VPS.
