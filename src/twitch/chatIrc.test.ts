@@ -23,7 +23,8 @@ function privmsg(over: Record<string, string> = {}): string {
     color: "#FF5733",
     "display-name": "Bob",
     id: "1b2d4f6a-0000-4000-8000-000000000001",
-    login: "bob",
+    // No `login` tag: a real PRIVMSG carries the sender's login only in its
+    // prefix, which is what the stored login has to come from.
     "reply-parent-msg-id": "parent-1",
     "tmi-sent-ts": SENT_AT,
     "user-id": "42",

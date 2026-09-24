@@ -33,6 +33,8 @@ export interface IrcSocketLike {
 
 export interface ParsedIrcLine {
   tags: Record<string, string>;
+  // The nick from the `:nick!user@host` prefix, when there is one.
+  nick: string | null;
   command: string;
   params: string[];
   trailing: string | null;
@@ -66,11 +68,15 @@ export function parseIrcLine(line: string): ParsedIrcLine | null {
     rest = rest.slice(end + 1).trimStart();
   }
 
-  // A prefix is metadata only: over this connection the peer is Twitch's own
-  // server either way, so it is dropped rather than trusted.
+  // The prefix names the sender of a PRIVMSG (`:login!login@login.tmi.twitch.tv`)
+  // — the only place a chat line carries the sender's login, since the tags have
+  // just `display-name`, which can be localized or differently cased.
+  let nick: string | null = null;
   if (rest.startsWith(":")) {
     const end = rest.indexOf(" ");
     if (end === -1) return null;
+    const bang = rest.indexOf("!");
+    if (bang !== -1 && bang < end) nick = rest.slice(1, bang).toLowerCase();
     rest = rest.slice(end + 1).trimStart();
   }
 
@@ -81,7 +87,7 @@ export function parseIrcLine(line: string): ParsedIrcLine | null {
   const command = parts.shift();
   if (!command) return null;
 
-  return { tags, command: command.toUpperCase(), params: parts, trailing };
+  return { tags, nick, command: command.toUpperCase(), params: parts, trailing };
 }
 
 function channelFrom(params: string[]): string | null {
@@ -173,8 +179,8 @@ export function handleIrcLine(line: string): IrcLineResult {
       sentAt: sentAtFromTags(parsed.tags) ?? new Date().toISOString(),
       content: parsed.trailing ?? "",
       senderUserId: parsed.tags["user-id"] ?? null,
-      senderLogin: (parsed.tags["login"] ?? "").toLowerCase() || null,
-      senderDisplay: parsed.tags["display-name"] ?? null,
+      senderLogin: parsed.nick,
+      senderDisplay: parsed.tags["display-name"] || null,
       senderColor: parsed.tags["color"] || null,
       badges: badgesFromTags(parsed.tags),
       replyToMessageId: parsed.tags["reply-parent-msg-id"] ?? null,

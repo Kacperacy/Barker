@@ -51,7 +51,6 @@ const envSchema = z.object({
   // Same format, for channels that are logged but must not be visible: the read
   // API leaves them out of its channel list and out of every unfiltered query,
   // so a dev/testing channel never reaches the site or its totals.
-  CHAT_LOG_HIDDEN_CHANNELS: z.string().default(""),
   // 0 keeps everything. Messages are the one table that grows with every viewer,
   // so a busy channel eventually wants a window.
   CHAT_LOG_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(0),

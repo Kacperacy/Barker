@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { db as defaultDb } from "../connection";
 import type { Platform } from "../../types";
-import { normalizeChatLogin, type ChatLogTarget } from "../../chat/targets";
+import { normalizeChatLogin } from "../../chat/targets";
 
 // What a moderation row is. Kick only reports the ban side — there is no
 // `moderation.unbanned` event — and Twitch has separate clear/delete events, so
@@ -68,9 +68,6 @@ export interface ModerationEventFilter {
   to?: string;
   // One broadcast, as recorded on the rows (see chat/live.ts).
   streamId?: string;
-  // (platform, login) pairs to keep out of the result — the hidden channels from
-  // chat/ingest.ts.
-  excludeChannels?: ChatLogTarget[];
   limit?: number;
   offset?: number;
 }
@@ -115,6 +112,23 @@ export function insertModerationEvent(
   return result.changes > 0;
 }
 
+// A person is looked up the way a reader names them: by login or by the display
+// name chat shows, case-insensitively. Kick's login is the channel slug, which
+// spells underscores as hyphens ("Some_User" → "some-user"), so both spellings
+// of the login are tried.
+function personMatch(
+  loginColumn: string,
+  displayColumn: string,
+  value: string,
+  params: (string | number)[],
+): string {
+  const name = value.trim().toLowerCase();
+  params.push(name, name.replace(/_/g, "-"));
+  const a = params.length - 1;
+  const b = params.length;
+  return `(${loginColumn} IN (?${a}, ?${b}) OR lower(${displayColumn}) = ?${a})`;
+}
+
 function buildWhere(filter: ModerationEventFilter): {
   clause: string;
   params: (string | number)[];
@@ -135,17 +149,12 @@ function buildWhere(filter: ModerationEventFilter): {
     add("broadcaster_login = ?", login);
   }
   if (filter.action) add("action = ?", filter.action);
-  if (filter.target) add("target_login = ?", filter.target.trim().toLowerCase());
+  if (filter.target) {
+    conditions.push(personMatch("target_login", "target_display", filter.target, params));
+  }
   if (filter.streamId) add("stream_id = ?", filter.streamId);
   if (filter.from) add("created_at >= ?", filter.from);
   if (filter.to) add("created_at <= ?", filter.to);
-  for (const hidden of filter.excludeChannels ?? []) {
-    const login = normalizeChatLogin(hidden.platform, hidden.login);
-    params.push(hidden.platform, login);
-    conditions.push(
-      `NOT (platform = ?${params.length - 1} AND broadcaster_login = ?${params.length})`,
-    );
-  }
 
   return {
     clause: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",

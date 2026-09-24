@@ -59,7 +59,7 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
   {
     method: "GET",
     path: "/api/chat/targets",
-    summary: "Channels configured for logging; hidden ones only with includeHidden.",
+    summary: "Channels configured for logging.",
   },
   {
     method: "GET",
@@ -155,13 +155,6 @@ export const COMMON_PARAMETERS: QueryParameter[] = [
     schema: { type: "string" },
     description:
       "Restrict to one broadcast, by the streamId its rows carry. Omitted, rows from every broadcast are returned.",
-  },
-  {
-    name: "includeHidden",
-    in: "query",
-    schema: { type: "boolean", default: false },
-    description:
-      "Include channels marked hidden in CHAT_LOG_HIDDEN_CHANNELS. The site never sends it; it exists so tooling can read a dev channel deliberately.",
   },
 ];
 
@@ -331,11 +324,6 @@ const SCHEMAS: Record<string, unknown> = {
     properties: {
       platform: { type: "string", enum: PLATFORM_VALUES },
       login: { type: "string" },
-      hidden: {
-        type: "boolean",
-        description:
-          "Only present when includeHidden asked for the hidden channels.",
-      },
     },
   },
   Targets: {
@@ -770,9 +758,9 @@ export function openapiDocument() {
       "/api/chat/targets": {
         get: operation(
           "Channels configured for logging",
-          [byName("includeHidden")],
+          [],
           "Targets",
-          "The configured channels, whether or not they have produced anything yet. Hidden channels are listed only when includeHidden is set, where they also carry hidden: true.",
+          "The configured channels, whether or not they have produced anything yet.",
         ),
       },
       "/api/chat/messages": {

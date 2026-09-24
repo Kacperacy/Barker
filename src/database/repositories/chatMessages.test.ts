@@ -116,6 +116,28 @@ describe("listChatMessages", () => {
     expect(listChatMessages({ q: "%" }, db).total).toBe(1);
   });
 
+  test("finds an author by display name or by either spelling of a Kick login", () => {
+    const db = makeTestDb();
+    insertChatMessages(
+      [
+        message({
+          messageId: "a",
+          platform: "kick",
+          broadcasterLogin: "klaun-0k",
+          senderLogin: "szachowy-motor-1996",
+          senderDisplay: "Szachowy_Motor_1996",
+        }),
+        message({ messageId: "b", senderLogin: "carol", senderDisplay: "Carol" }),
+      ],
+      db,
+    );
+
+    expect(listChatMessages({ author: "Szachowy_Motor_1996" }, db).total).toBe(1);
+    expect(listChatMessages({ author: "szachowy-motor-1996" }, db).total).toBe(1);
+    expect(listChatMessages({ author: "CAROL" }, db).total).toBe(1);
+    expect(listChatMessages({ author: "szachowy" }, db).total).toBe(0);
+  });
+
   test("normalizes a Kick channel filter to the stored slug", () => {
     const db = makeTestDb();
     insertChatMessages(

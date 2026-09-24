@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { db as defaultDb } from "../connection";
 import type { Platform } from "../../types";
-import { normalizeChatLogin, type ChatLogTarget } from "../../chat/targets";
+import { normalizeChatLogin } from "../../chat/targets";
 
 export interface ChatMessageRow {
   platform: Platform;
@@ -46,10 +46,6 @@ export interface ChatMessageFilter {
   from?: string;
   to?: string;
   streamId?: string;
-  // (platform, login) pairs to keep out of the result — the hidden channels from
-  // chat/ingest.ts. Filtered in SQL rather than after the query so a page's rows
-  // and its total agree.
-  excludeChannels?: ChatLogTarget[];
   limit?: number;
   offset?: number;
 }
@@ -121,6 +117,23 @@ function likePattern(query: string): string {
   return `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
 
+// A person is looked up the way a reader names them: by login or by the display
+// name chat shows, case-insensitively. Kick's login is the channel slug, which
+// spells underscores as hyphens ("Some_User" → "some-user"), so both spellings
+// of the login are tried.
+function personMatch(
+  loginColumn: string,
+  displayColumn: string,
+  value: string,
+  params: (string | number)[],
+): string {
+  const name = value.trim().toLowerCase();
+  params.push(name, name.replace(/_/g, "-"));
+  const a = params.length - 1;
+  const b = params.length;
+  return `(${loginColumn} IN (?${a}, ?${b}) OR lower(${displayColumn}) = ?${a})`;
+}
+
 function buildWhere(filter: ChatMessageFilter): {
   clause: string;
   params: (string | number)[];
@@ -143,17 +156,12 @@ function buildWhere(filter: ChatMessageFilter): {
       : filter.login.trim().toLowerCase();
     add("broadcaster_login = ?", login);
   }
-  if (filter.author) add("sender_login = ?", filter.author.trim().toLowerCase());
+  if (filter.author) {
+    conditions.push(personMatch("sender_login", "sender_display", filter.author, params));
+  }
   if (filter.streamId) add("stream_id = ?", filter.streamId);
   if (filter.from) add("sent_at >= ?", filter.from);
   if (filter.to) add("sent_at <= ?", filter.to);
-  for (const hidden of filter.excludeChannels ?? []) {
-    const login = normalizeChatLogin(hidden.platform, hidden.login);
-    params.push(hidden.platform, login);
-    conditions.push(
-      `NOT (platform = ?${params.length - 1} AND broadcaster_login = ?${params.length})`,
-    );
-  }
   if (filter.q) add("content LIKE ? ESCAPE '\\'", likePattern(filter.q));
 
   return {
