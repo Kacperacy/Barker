@@ -40,13 +40,7 @@ import {
   listStoredVodChannels,
   type StreamRecorderVodRow,
 } from "../database/repositories/streamRecorderVods";
-import {
-  chatLogTargets,
-  hiddenChatLogTargets,
-  isChatLoggingEnabled,
-  visibleChatLogTargets,
-} from "../chat/ingest";
-import { isChatLogTarget, type ChatLogTarget } from "../chat/targets";
+import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
 import { handleKickWebhookRequest, type KickWebhookDeps } from "../kick/webhooks";
 import { API_ENDPOINTS, API_VERSION, openapiDocument } from "./openapi";
 
@@ -156,14 +150,6 @@ function boolParam(url: URL, name: string, fallback = false): boolean {
   invalid(`invalid ${name}: expected a boolean`);
 }
 
-// Hidden channels are logged but not served: they are out of the channel list and
-// out of every read query unless the caller opts in with `includeHidden`, which
-// the site never sends. The opt-in is explicit rather than inferred from whether
-// a login was given, so hiding cannot be switched off by accident.
-function hiddenChannelExclusions(url: URL): ChatLogTarget[] {
-  return boolParam(url, "includeHidden") ? [] : hiddenChatLogTargets();
-}
-
 // The filters every read endpoint shares, built in one place so they cannot drift
 // apart: a new one is added here and reaches all of them.
 function commonFilter(url: URL) {
@@ -173,7 +159,6 @@ function commonFilter(url: URL) {
     from: timestampParam(url, "from"),
     to: timestampParam(url, "to"),
     streamId: url.searchParams.get("streamId") ?? undefined,
-    excludeChannels: hiddenChannelExclusions(url),
   };
 }
 
@@ -329,26 +314,12 @@ async function handleRequest(
     return json(openapiDocument());
   }
 
-  // Which channels are configured, so a client can build a channel switch from
-  // the server's own list instead of hardcoding it. Hidden channels are left out
-  // of this list and out of every query that does not opt in, which together is
-  // what keeps a dev channel off the site.
+  // Which channels are configured for logging. The API is general: a client
+  // picks the channels it shows by passing `platform` and `login`.
   if (url.pathname === "/api/chat/targets") {
-    const includeHidden = boolParam(url, "includeHidden");
-    if (!includeHidden) {
-      return json({
-        enabled: isChatLoggingEnabled(),
-        channels: visibleChatLogTargets(),
-      });
-    }
-
-    const hidden = hiddenChatLogTargets();
     return json({
       enabled: isChatLoggingEnabled(),
-      channels: chatLogTargets().map((target) => ({
-        ...target,
-        hidden: isChatLogTarget(hidden, target.platform, target.login),
-      })),
+      channels: chatLogTargets(),
     });
   }
 

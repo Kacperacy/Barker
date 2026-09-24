@@ -33,7 +33,6 @@ events, and `/api/chat/*` is what the front end reads.
 | --- | --- | --- |
 | `CHAT_LOG_ENABLED` | `false` | Master switch. |
 | `CHAT_LOG_CHANNELS` | `""` | `twitch:klaun___0k,kick:klaun-0k`. A malformed entry stops startup rather than logging a channel with holes in it. |
-| `CHAT_LOG_HIDDEN_CHANNELS` | `""` | Same format, for channels that are logged but not shown: the `/api/chat/targets` list and every `/api/chat/*` query that does not name a channel skip them, so a dev channel never appears on the site or in its totals. `?login=…` still reads one. |
 | `CHAT_LOG_RETENTION_DAYS` | `0` | `0` keeps everything. Prunes messages only; moderation rows are never dropped. |
 | `API_PORT` | `3001` | Serves the read API and the webhook. |
 | `PUBLIC_BASE_URL` | `""` | Printed in the log as the webhook URL to register. |
@@ -59,8 +58,7 @@ broadcaster — so neither platform asks for an account with moderator powers:
   token the broadcaster would be inferred from the token, which only the channel's
   owner can have.
 
-So the whole setup is configuration (`CHAT_LOG_ENABLED`, `CHAT_LOG_CHANNELS`,
-`CHAT_LOG_HIDDEN_CHANNELS`) plus
+So the whole setup is configuration (`CHAT_LOG_ENABLED`, `CHAT_LOG_CHANNELS`) plus
 a public HTTPS URL for Kick's webhooks, below. Startup logs which channels it is
 following and over which transport, so an empty log is never ambiguous.
 
@@ -89,16 +87,16 @@ posting bans into the log. Deliveries are idempotent on the platform's own ids.
 | `GET /api` | The endpoint index — enough to explore the API without reading this repository. |
 | `GET /api/openapi.json` | The same contract as an OpenAPI 3.1 document, for generating a client. |
 | `GET /health` | `{ ok, chatLogging }` |
-| `GET /api/chat/targets` | The channels configured for logging, including ones that have produced nothing yet. `includeHidden` adds the hidden ones, flagged `hidden`. |
-| `GET /api/chat/messages` | `author`, `q`, paging; newest first with a `total`. |
-| `GET /api/moderation/events` | `action`, `target`, paging. |
+| `GET /api/chat/targets` | The channels configured for logging, including ones that have produced nothing yet. |
+| `GET /api/chat/messages` | `author` (login or display name, case-insensitive), `q`, paging; newest first with a `total`. |
+| `GET /api/moderation/events` | `action`, `target` (login or display name), paging. |
 | `GET /api/chat/stats` | Chat totals and buckets plus ban/timeout counts in one call — the subpage's summary. |
 | `GET /api/moderation/stats` | The moderation half on its own. |
 | `GET /api/chat/series` | `groupBy` (`day`, `hour`, `weekday`, `author`, `channel`, `platform`, `stream`), `metric` (`messages`, `chatters`), `order` (`key`/`value`), `limit`. |
 | `GET /api/moderation/series` | The same for moderation: `groupBy` (`day`, `hour`, `weekday`, `target`, `actor`, `action`, `channel`, `platform`, `stream`), `metric` (`events`, `bans`, `timeouts`, `targets`). |
 
 Every read endpoint takes the same filters — `platform`, `login`, `from`, `to`,
-`streamId`, `includeHidden` — and the same window: `days` counted back from now,
+`streamId` — and the same window: `days` counted back from now,
 or an absolute `from`/`to`, where `from` wins. Timestamps and bounds are
 inclusive, and each row answers with the platform's own send time rather than
 when we stored it.
@@ -116,9 +114,10 @@ API cannot afford.
 
 The contract is additive-only — parameters, response fields and endpoints are
 added, never repurposed — and `/api/openapi.json` is what it is measured
-against. Hidden channels are out of `/api/chat/targets` and out of every query
-that does not pass `includeHidden`, which is what keeps a dev channel off the
-site while leaving it readable to tooling.
+against.
+
+The API is general: it serves every logged channel, and a client chooses which
+ones it shows by passing `platform` and `login`.
 
 ## Storage
 

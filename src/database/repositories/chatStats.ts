@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { db as defaultDb } from "../connection";
-import { normalizeChatLogin, type ChatLogTarget } from "../../chat/targets";
+import { normalizeChatLogin } from "../../chat/targets";
 import type { Platform } from "../../types";
 
 // Statistics are computed on read rather than rolled up into a table: the log is
@@ -17,9 +17,6 @@ export interface StatsFilter {
   to?: string;
   // One broadcast, as recorded on the rows (see chat/live.ts).
   streamId?: string;
-  // (platform, login) pairs to keep out of the totals — the hidden channels from
-  // chat/ingest.ts, so a dev channel never inflates what the site charts.
-  excludeChannels?: ChatLogTarget[];
 }
 
 export interface ChatStats {
@@ -74,13 +71,6 @@ function windowClause(
   const from = filter.from ?? windowStart(filter.days ?? DEFAULT_STATS_DAYS);
   if (from) add(`${column} >= ?`, from);
   if (filter.to) add(`${column} <= ?`, filter.to);
-  for (const hidden of filter.excludeChannels ?? []) {
-    const login = normalizeChatLogin(hidden.platform, hidden.login);
-    params.push(hidden.platform, login);
-    conditions.push(
-      `NOT (platform = ?${params.length - 1} AND broadcaster_login = ?${params.length})`,
-    );
-  }
 
   return {
     clause: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",
