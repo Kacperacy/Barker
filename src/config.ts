@@ -54,6 +54,9 @@ const envSchema = z.object({
   // 0 keeps everything. Messages are the one table that grows with every viewer,
   // so a busy channel eventually wants a window.
   CHAT_LOG_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(0),
+  // Stream history (streams/polling.ts): how often the logged channels are
+  // checked for being live, which is also the viewer-graph resolution.
+  STREAM_HISTORY_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(120000),
 
   // Read API and webhook receiver (src/web/server.ts). Kick delivers events by
   // webhook only, so this port has to be reachable from the internet through

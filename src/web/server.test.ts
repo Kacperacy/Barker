@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { runMigrations } from "../database/migrations/index";
 import { insertChatMessages } from "../database/repositories/chatMessages";
 import { insertModerationEvent } from "../database/repositories/moderationEvents";
+import { recordStreamSample } from "../database/repositories/streams";
 import { handleApiRequest } from "./server";
 
 function makeTestDb(): Database {
@@ -248,5 +249,76 @@ describe("routing", () => {
       { db: makeTestDb(), kick: { getPublicKey: async () => null } },
     );
     expect(response.status).toBe(503);
+  });
+});
+describe("GET /api/streams", () => {
+  test("lists broadcasts with viewers and what happened in chat", async () => {
+    const db = makeTestDb();
+    for (const [at, viewers] of [
+      ["2026-01-01T10:00:00.000Z", 4],
+      ["2026-01-01T11:00:00.000Z", 10],
+    ] as const) {
+      recordStreamSample(
+        {
+          platform: "kick",
+          streamId: "s-1",
+          broadcasterLogin: "alice",
+          title: "siema",
+          category: "Just Chatting",
+          startedAt: "2026-01-01T10:00:00.000Z",
+          viewers,
+          at,
+        },
+        db,
+      );
+    }
+    insertChatMessages(
+      [
+        { platform: "kick", messageId: "m-1", broadcasterLogin: "alice", streamId: "s-1", sentAt: "2026-01-01T10:30:00.000Z", content: "a", senderLogin: "bob" },
+        { platform: "kick", messageId: "m-2", broadcasterLogin: "alice", streamId: "s-1", sentAt: "2026-01-01T10:31:00.000Z", content: "b", senderLogin: "bob" },
+      ],
+      db,
+    );
+    insertModerationEvent(
+      { platform: "kick", eventId: "e-1", broadcasterLogin: "alice", streamId: "s-1", action: "ban", createdAt: "2026-01-01T10:40:00.000Z" },
+      db,
+    );
+
+    const payload = await body(
+      await handleApiRequest(request("/api/streams?platform=kick&login=alice"), { db }),
+    );
+    expect(payload.total).toBe(1);
+    expect(payload.streams[0]).toEqual({
+      platform: "kick",
+      id: "s-1",
+      channel: "alice",
+      title: "siema",
+      category: "Just Chatting",
+      startedAt: "2026-01-01T10:00:00.000Z",
+      endedAt: null,
+      live: true,
+      durationSeconds: 3600,
+      peakViewers: 10,
+      avgViewers: 7,
+      messages: 2,
+      chatters: 1,
+      bans: 1,
+      timeouts: 0,
+    });
+
+    const samples = await body(
+      await handleApiRequest(request("/api/streams/viewers?platform=kick&id=s-1"), { db }),
+    );
+    expect(samples.samples).toEqual([
+      { at: "2026-01-01T10:00:00.000Z", viewers: 4 },
+      { at: "2026-01-01T11:00:00.000Z", viewers: 10 },
+    ]);
+  });
+
+  test("asks for the stream a viewer graph is for", async () => {
+    const response = await handleApiRequest(request("/api/streams/viewers?platform=kick"), {
+      db: makeTestDb(),
+    });
+    expect(response.status).toBe(400);
   });
 });

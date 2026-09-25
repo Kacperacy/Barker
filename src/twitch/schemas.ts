@@ -17,6 +17,7 @@ export const twitchStreamSchema = z
     viewer_count: z.number(),
     language: z.string(),
     thumbnail_url: z.string(),
+    started_at: z.string().optional(),
   })
   .passthrough();
 export const twitchStreamsResponseSchema = z

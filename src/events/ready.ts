@@ -9,6 +9,7 @@ import { startRiotPolling } from "../riot/polling";
 import { startDailySummaryTimer } from "../riot/summary";
 import { startKickEventSubscriptionRefresh } from "../kick/events";
 import { startKickChatSocket } from "../kick/chatSocket";
+import { startStreamHistoryPolling } from "../streams/polling";
 import { startChatRetention } from "../chat/retention";
 import { logChatLoggingStatus } from "../chat/diagnostics";
 import { isChatLoggingEnabled } from "../chat/ingest";
@@ -34,6 +35,7 @@ export default (client: Client) => {
     startTwitchChatIrc();
     startKickEventSubscriptionRefresh();
     if (isChatLoggingEnabled()) void startKickChatSocket();
+    startStreamHistoryPolling();
     startChatRetention();
   });
 };

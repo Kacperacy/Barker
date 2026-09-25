@@ -17,6 +17,8 @@ import {
   MODERATION_ACTIONS,
 } from "../database/repositories/moderationEvents";
 
+import { DEFAULT_STREAM_PAGE, MAX_STREAM_PAGE } from "../database/repositories/streams";
+
 // The read API's contract, in one place: /api answers the index below and
 // /api/openapi.json the document, both built from this module, so the two can
 // never advertise different APIs. It is written by hand rather than generated
@@ -91,6 +93,17 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
       "Moderation grouped by day, hour, weekday, target, actor, action, channel, platform or stream.",
   },
   {
+    method: "GET",
+    path: "/api/streams",
+    summary:
+      "Broadcasts of the logged channels, newest first, with viewer peak and average and chat/moderation totals.",
+  },
+  {
+    method: "GET",
+    path: "/api/streams/viewers",
+    summary: "One broadcast's viewer count over time.",
+  },
+  {
     method: "POST",
     path: "/webhooks/kick",
     summary: "Kick's event delivery. Signature-verified; not a client endpoint.",
@@ -102,6 +115,7 @@ interface QueryParameter {
   in: "query";
   schema: Record<string, unknown>;
   description: string;
+  required?: boolean;
 }
 
 const PLATFORM_VALUES = ["twitch", "kick"];
@@ -554,6 +568,60 @@ const SCHEMAS: Record<string, unknown> = {
       windowDays: { type: "integer" },
     },
   },
+  Stream: {
+    type: "object",
+    required: ["platform", "id", "channel", "startedAt", "live"],
+    properties: {
+      platform: { type: "string", enum: PLATFORM_VALUES },
+      id: { type: "string", description: "The platform's broadcast id; chat rows carry it as streamId." },
+      channel: { type: "string" },
+      title: { type: ["string", "null"], description: "Latest title seen; null for streams backfilled from the chat log." },
+      category: { type: ["string", "null"] },
+      startedAt: { type: "string", format: "date-time" },
+      endedAt: {
+        type: ["string", "null"],
+        format: "date-time",
+        description: "Last time the stream was seen live; null while it is live.",
+      },
+      live: { type: "boolean" },
+      durationSeconds: { type: ["integer", "null"] },
+      peakViewers: { type: ["integer", "null"] },
+      avgViewers: { type: ["integer", "null"] },
+      messages: { type: "integer" },
+      chatters: { type: "integer" },
+      bans: { type: "integer" },
+      timeouts: { type: "integer" },
+    },
+  },
+  StreamPage: {
+    type: "object",
+    required: ["streams", "total", "limit", "offset"],
+    properties: {
+      streams: { type: "array", items: { $ref: "#/components/schemas/Stream" } },
+      total: { type: "integer" },
+      limit: { type: "integer" },
+      offset: { type: "integer" },
+    },
+  },
+  ViewerSamples: {
+    type: "object",
+    required: ["platform", "id", "samples"],
+    properties: {
+      platform: { type: "string", enum: PLATFORM_VALUES },
+      id: { type: "string" },
+      samples: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["at", "viewers"],
+          properties: {
+            at: { type: "string", format: "date-time" },
+            viewers: { type: "integer" },
+          },
+        },
+      },
+    },
+  },
   ApiIndex: {
     type: "object",
     required: ["name", "version", "openapi", "endpoints"],
@@ -719,6 +787,33 @@ export function openapiDocument() {
             SERIES_PARAMETERS.seriesLimit,
           ],
           "ModerationSeries",
+        ),
+      },
+      "/api/streams": {
+        get: operation(
+          "Broadcasts of the logged channels",
+          [
+            byName("platform"),
+            byName("login"),
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: MAX_STREAM_PAGE, default: DEFAULT_STREAM_PAGE },
+              description: "Page size; clamped to the maximum.",
+            },
+            PAGING_PARAMETERS.offset,
+          ],
+          "StreamPage",
+        ),
+      },
+      "/api/streams/viewers": {
+        get: operation(
+          "One broadcast's viewer count over time",
+          [
+            { ...byName("platform"), required: true },
+            { name: "id", in: "query", required: true, schema: { type: "string" }, description: "The broadcast id." },
+          ],
+          "ViewerSamples",
         ),
       },
     },
