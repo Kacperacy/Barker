@@ -93,6 +93,11 @@ Kick's signed webhooks and `/health` are not throttled. Also:
 - Expired sessions are purged on each login.
 - `POST /csp-report` receives the site's Content-Security-Policy violation
   reports and logs each distinct one at most hourly.
+- `POST /client-error` receives uncaught errors from the site's visitors
+  (`{ kind, message, stack, path, release }`, 10 kB max) and logs one line per
+  distinct message and page per hour: `[client error] <message> @ <path>
+  (<build>) <top stack frame>`. Throttled like the report endpoints; nothing
+  about the visitor is stored.
 
 ## Recordings and short links
 

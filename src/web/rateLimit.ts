@@ -74,7 +74,7 @@ export function classify(request: Request, path: string): RequestKind | null {
   // Kick's signed deliveries and the health probe are not throttled.
   if (request.method === "OPTIONS" || path === "/health" || path === "/webhooks/kick") return null;
   if (/^\/auth\/(kick|twitch)\/(start|callback)$/.test(path)) return "auth";
-  if (path.endsWith("/report") || path === "/csp-report") return "report";
+  if (path.endsWith("/report") || path === "/csp-report" || path === "/client-error") return "report";
   if (request.method !== "GET" && request.method !== "HEAD") return "write";
   return "read";
 }

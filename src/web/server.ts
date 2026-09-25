@@ -315,6 +315,39 @@ function isAuthorized(request: Request, url: URL): boolean {
 }
 
 const seenCspReports = new Map<string, number>();
+const seenClientErrors = new Map<string, number>();
+
+// One line per distinct error: the site sends what broke in a visitor's
+// browser (message, top of the stack, page, build). Capped and deduplicated
+// per hour like the CSP reports; nothing about the visitor is kept.
+export function logClientError(body: string, now = Date.now(), log: (line: string) => void = (line) => logger.warn(line)): boolean {
+  let report: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(body.slice(0, 10_000));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
+    report = parsed as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  const text = (value: unknown, max: number) =>
+    typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
+  const message = text(report.message, 300);
+  if (!message) return false;
+  const path = text(report.path, 120) || "?";
+  const release = text(report.release, 40) || "?";
+  const kind = text(report.kind, 20) || "error";
+  const frame = text(
+    typeof report.stack === "string" ? report.stack.split("\n").find((line) => line.includes("at ") || line.includes("@")) : "",
+    200,
+  );
+  const key = `${message} ${path}`;
+  const seen = seenClientErrors.get(key);
+  if (seen !== undefined && seen > now - 3_600_000) return false;
+  if (seenClientErrors.size > 500) seenClientErrors.clear();
+  seenClientErrors.set(key, now);
+  log(`[client ${kind}] ${message} @ ${path} (${release})${frame ? ` ${frame}` : ""}`);
+  return true;
+}
 
 function logCspReport(body: string): void {
   let report: Record<string, unknown> = {};
@@ -376,6 +409,13 @@ async function handleRequest(
   if (url.pathname === "/csp-report") {
     if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
     logCspReport(await request.text());
+    return new Response(null, { status: 204 });
+  }
+
+  // Uncaught errors from the site's visitors (see logClientError).
+  if (url.pathname === "/client-error") {
+    if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+    logClientError(await request.text());
     return new Response(null, { status: 204 });
   }
 
