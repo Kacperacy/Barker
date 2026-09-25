@@ -46,6 +46,18 @@ export interface ModerationEventRow {
   received_at: string;
 }
 
+// A listed event also carries the message a `message_delete` removed, when the
+// chat log has it (null otherwise, and for every other action).
+export interface ListedModerationEventRow extends ModerationEventRow {
+  deleted_content: string | null;
+  deleted_sender_login: string | null;
+  deleted_sender_display: string | null;
+}
+
+const DELETED_MESSAGE = (column: string) => `(SELECT m.${column} FROM chat_messages m
+    WHERE m.platform = moderation_events.platform
+      AND m.message_id = moderation_events.target_message_id)`;
+
 export interface NewModerationEvent {
   platform: Platform;
   eventId: string;
@@ -168,7 +180,7 @@ function buildWhere(filter: ModerationEventFilter): {
 }
 
 export interface ModerationEventPage {
-  events: ModerationEventRow[];
+  events: ListedModerationEventRow[];
   total: number;
   // Echoed back so a caller paging through the list can see the clamp the
   // repository actually applied.
@@ -189,11 +201,15 @@ export function listModerationEvents(
 
   const events = db
     .query(
-      `SELECT * FROM moderation_events ${clause}
+      `SELECT moderation_events.*,
+              ${DELETED_MESSAGE("content")} AS deleted_content,
+              ${DELETED_MESSAGE("sender_login")} AS deleted_sender_login,
+              ${DELETED_MESSAGE("sender_display")} AS deleted_sender_display
+       FROM moderation_events ${clause}
        ORDER BY created_at DESC, event_id DESC
        LIMIT ?${params.length + 1} OFFSET ?${params.length + 2}`,
     )
-    .all(...params, limit, offset) as ModerationEventRow[];
+    .all(...params, limit, offset) as ListedModerationEventRow[];
 
   const total = (
     db

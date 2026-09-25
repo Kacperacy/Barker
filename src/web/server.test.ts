@@ -169,12 +169,56 @@ describe("GET /api/moderation/events", () => {
       action: "timeout",
       target: { id: "2", login: "bob", display: "Bob" },
       targetMessageId: null,
+      deletedMessage: null,
       actor: "mod",
       reason: "caps",
       durationMinutes: 10,
       expiresAt: "2026-01-01T10:10:00.000Z",
       createdAt: "2026-01-01T10:00:00.000Z",
     });
+  });
+
+  test("a deletion carries the message it removed", async () => {
+    const db = makeTestDb();
+    insertChatMessages(
+      [
+        {
+          platform: "kick",
+          messageId: "m-9",
+          broadcasterLogin: "alice",
+          sentAt: "2026-01-01T09:59:00.000Z",
+          content: "zła wiadomość",
+          senderLogin: "bob",
+          senderDisplay: "Bob",
+        },
+      ],
+      db,
+    );
+    for (const [eventId, target] of [["d-1", "m-9"], ["d-2", "m-unknown"]] as const) {
+      insertModerationEvent(
+        {
+          platform: "kick",
+          eventId,
+          broadcasterLogin: "alice",
+          action: "message_delete",
+          createdAt: "2026-01-01T10:00:00.000Z",
+          targetMessageId: target,
+          reason: "AI moderation",
+        },
+        db,
+      );
+    }
+
+    const response = await handleApiRequest(request("/api/moderation/events"), { db });
+    const payload = await body(response);
+    const byId = Object.fromEntries(payload.events.map((event: { id: string }) => [event.id, event]));
+
+    expect(byId["d-1"].deletedMessage).toEqual({
+      content: "zła wiadomość",
+      author: { login: "bob", display: "Bob" },
+    });
+    // Not in the log: no message, the event itself still listed.
+    expect(byId["d-2"].deletedMessage).toBeNull();
   });
 });
 

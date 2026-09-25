@@ -13,7 +13,7 @@ import {
   listModerationEvents,
   MODERATION_ACTIONS,
   type ModerationAction,
-  type ModerationEventRow,
+  type ListedModerationEventRow,
 } from "../database/repositories/moderationEvents";
 import {
   CHAT_GROUP_BY_VALUES,
@@ -215,7 +215,7 @@ function toApiMessage(row: ListedChatMessageRow) {
   };
 }
 
-function toApiModerationEvent(row: ModerationEventRow) {
+function toApiModerationEvent(row: ListedModerationEventRow) {
   return {
     platform: row.platform,
     id: row.event_id,
@@ -228,6 +228,13 @@ function toApiModerationEvent(row: ModerationEventRow) {
       display: row.target_display,
     },
     targetMessageId: row.target_message_id,
+    deletedMessage:
+      row.deleted_content === null
+        ? null
+        : {
+            content: row.deleted_content,
+            author: { login: row.deleted_sender_login, display: row.deleted_sender_display },
+          },
     actor: row.actor_login,
     reason: row.reason,
     durationMinutes: row.duration_minutes,

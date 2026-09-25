@@ -413,6 +413,21 @@ const SCHEMAS: Record<string, unknown> = {
         type: ["string", "null"],
         description: "For message_delete: the id of the message that was removed.",
       },
+      deletedMessage: {
+        type: ["object", "null"],
+        description:
+          "For message_delete: the removed message, when the chat log has it.",
+        properties: {
+          content: { type: "string" },
+          author: {
+            type: "object",
+            properties: {
+              login: { type: ["string", "null"] },
+              display: { type: ["string", "null"] },
+            },
+          },
+        },
+      },
       actor: {
         type: ["string", "null"],
         description:
