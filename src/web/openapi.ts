@@ -104,6 +104,16 @@ export const API_ENDPOINTS: ApiEndpoint[] = [
     summary: "One broadcast's viewer count over time.",
   },
   {
+    method: "GET",
+    path: "/api/recordings",
+    summary: "Recordings (VODs) on Kick and Twitch, newest first.",
+  },
+  {
+    method: "GET",
+    path: "/api/recordings/at",
+    summary: "The recordings covering one instant, with the offset into each, and the live stream if it is still running.",
+  },
+  {
     method: "POST",
     path: "/webhooks/kick",
     summary: "Kick's event delivery. Signature-verified; not a client endpoint.",
@@ -622,6 +632,57 @@ const SCHEMAS: Record<string, unknown> = {
       },
     },
   },
+  Recording: {
+    type: "object",
+    required: ["platform", "id", "channel", "startedAt", "durationSeconds", "gone"],
+    properties: {
+      platform: { type: "string", enum: PLATFORM_VALUES },
+      id: { type: "string", description: "The platform's video id (Kick: the livestream id)." },
+      channel: { type: "string" },
+      streamId: { type: ["string", "null"] },
+      title: { type: ["string", "null"] },
+      category: { type: ["string", "null"] },
+      startedAt: { type: "string", format: "date-time" },
+      durationSeconds: { type: "integer" },
+      source: { type: ["string", "null"], description: "Kick's HLS master playlist; null for Twitch (play it by id in Twitch's embed)." },
+      thumbnail: { type: ["string", "null"] },
+      views: { type: ["integer", "null"] },
+      gone: { type: "boolean", description: "The platform no longer lists it (deleted or expired)." },
+    },
+  },
+  RecordingPage: {
+    type: "object",
+    required: ["recordings", "total"],
+    properties: {
+      recordings: { type: "array", items: { $ref: "#/components/schemas/Recording" } },
+      total: { type: "integer" },
+    },
+  },
+  RecordingsAt: {
+    type: "object",
+    required: ["t", "recordings", "live"],
+    properties: {
+      t: { type: "integer" },
+      recordings: {
+        type: "array",
+        items: {
+          allOf: [
+            { $ref: "#/components/schemas/Recording" },
+            { type: "object", properties: { offset: { type: "integer", description: "Seconds into this recording." } } },
+          ],
+        },
+      },
+      live: {
+        type: ["object", "null"],
+        properties: {
+          platform: { type: "string" },
+          channel: { type: "string" },
+          streamId: { type: "string" },
+          startedAt: { type: "string", format: "date-time" },
+        },
+      },
+    },
+  },
   ApiIndex: {
     type: "object",
     required: ["name", "version", "openapi", "endpoints"],
@@ -804,6 +865,28 @@ export function openapiDocument() {
             PAGING_PARAMETERS.offset,
           ],
           "StreamPage",
+        ),
+      },
+      "/api/recordings": {
+        get: operation(
+          "Recordings on Kick and Twitch",
+          [
+            { name: "channel", in: "query", schema: { type: "string" }, description: "<kick|twitch>:<login>; repeat for several. None: all." },
+            { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 100 }, description: "Page size." },
+            PAGING_PARAMETERS.offset,
+            { name: "includeGone", in: "query", schema: { type: "boolean", default: false }, description: "Also recordings the platform no longer lists." },
+          ],
+          "RecordingPage",
+        ),
+      },
+      "/api/recordings/at": {
+        get: operation(
+          "What covers one instant",
+          [
+            { name: "t", in: "query", required: true, schema: { type: "integer" }, description: "Unix seconds." },
+            { name: "channel", in: "query", schema: { type: "string" }, description: "<kick|twitch>:<login>; repeat for several." },
+          ],
+          "RecordingsAt",
         ),
       },
       "/api/streams/viewers": {

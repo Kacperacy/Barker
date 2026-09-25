@@ -55,3 +55,23 @@ export const eventSubSubscriptionsResponseSchema = z
       .optional(),
   })
   .passthrough();
+
+// Helix `GET /videos` (archives): `duration` is Twitch's "3h8m33s".
+export const twitchVideoSchema = z
+  .object({
+    id: z.string(),
+    stream_id: z.string().nullish(),
+    user_login: z.string(),
+    title: z.string(),
+    created_at: z.string(),
+    thumbnail_url: z.string().nullish(),
+    view_count: z.number().nullish(),
+    duration: z.string(),
+    type: z.string().optional(),
+  })
+  .passthrough();
+export type TwitchVideo = z.infer<typeof twitchVideoSchema>;
+
+export const twitchVideosResponseSchema = z
+  .object({ data: z.array(twitchVideoSchema) })
+  .passthrough();

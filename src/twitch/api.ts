@@ -11,6 +11,8 @@ import {
   twitchStreamSchema,
   twitchStreamsResponseSchema,
   twitchUsersResponseSchema,
+  twitchVideosResponseSchema,
+  type TwitchVideo,
 } from "./schemas";
 
 type TwitchStream = z.infer<typeof twitchStreamSchema>;
@@ -100,6 +102,27 @@ export async function getStreamData(
   }
 
   return parsed.data.data[0] ?? null;
+}
+
+// A channel's archived broadcasts (past-stream VODs), newest first, up to 100 —
+// Twitch keeps them 7–60 days, so that covers everything still watchable.
+// Returns null when the read failed, so a failure is never taken for "no VODs".
+export async function getTwitchArchiveVideos(
+  userId: string,
+): Promise<TwitchVideo[] | null> {
+  const res = await twitchFetch(
+    `https://api.twitch.tv/helix/videos?user_id=${encodeURIComponent(userId)}&type=archive&first=100`,
+  );
+  if (!res.ok) {
+    logger.error(`[Twitch API] getTwitchArchiveVideos error: ${res.status} ${await res.text()}`);
+    return null;
+  }
+  const parsed = twitchVideosResponseSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    logger.error(`[Twitch API] getTwitchArchiveVideos: unexpected response shape: ${parsed.error.message}`);
+    return null;
+  }
+  return parsed.data.data;
 }
 
 // Twitch keys subscription uniqueness on type + condition per client ID, so

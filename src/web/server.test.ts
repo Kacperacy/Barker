@@ -4,6 +4,7 @@ import { runMigrations } from "../database/migrations/index";
 import { insertChatMessages } from "../database/repositories/chatMessages";
 import { insertModerationEvent } from "../database/repositories/moderationEvents";
 import { recordStreamSample } from "../database/repositories/streams";
+import { syncRecordings } from "../database/repositories/recordings";
 import { handleApiRequest } from "./server";
 
 function makeTestDb(): Database {
@@ -320,5 +321,80 @@ describe("GET /api/streams", () => {
       db: makeTestDb(),
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("GET /api/recordings/at", () => {
+  const START = Date.parse("2026-09-24T16:57:47Z") / 1000;
+
+  function seed() {
+    const db = makeTestDb();
+    syncRecordings(
+      "kick",
+      "klaun-0k",
+      [
+        {
+          platform: "kick",
+          videoId: "128904405",
+          channelLogin: "klaun-0k",
+          startedAt: "2026-09-24T16:57:47.000Z",
+          durationSeconds: 15_185,
+          sourceUrl: "https://stream.kick.com/v/master.m3u8",
+          title: "co się dzieje",
+        },
+      ],
+      db,
+    );
+    syncRecordings(
+      "twitch",
+      "klaun___0k",
+      [{ platform: "twitch", videoId: "2567890123", channelLogin: "klaun___0k", startedAt: "2026-09-24T16:58:10.000Z", durationSeconds: 15_000 }],
+      db,
+    );
+    return db;
+  }
+
+  test("finds each platform's recording covering a second, with the offset into it", async () => {
+    const db = seed();
+    const payload = await body(
+      await handleApiRequest(
+        request(`/api/recordings/at?t=${START + 9012}&channel=kick:klaun-0k&channel=twitch:klaun___0k`),
+        { db },
+      ),
+    );
+    expect(payload.live).toBeNull();
+    expect(
+      payload.recordings.map((row: { platform: string; offset: number; source: string | null }) => [row.platform, row.offset, row.source]),
+    ).toEqual([
+      ["twitch", 8989, null],
+      ["kick", 9012, "https://stream.kick.com/v/master.m3u8"],
+    ]);
+  });
+
+  test("covers nothing between streams, and only the channels asked for", async () => {
+    const db = seed();
+    const before = await body(await handleApiRequest(request(`/api/recordings/at?t=${START - 3600}`), { db }));
+    expect(before.recordings).toEqual([]);
+    const kickOnly = await body(
+      await handleApiRequest(request(`/api/recordings/at?t=${START + 60}&channel=kick:klaun-0k`), { db }),
+    );
+    expect(kickOnly.recordings.map((row: { platform: string }) => row.platform)).toEqual(["kick"]);
+  });
+
+  test("says when the moment belongs to a stream that is still live", async () => {
+    const db = makeTestDb();
+    recordStreamSample(
+      { platform: "kick", streamId: "s-live", broadcasterLogin: "klaun-0k", startedAt: "2026-09-25T17:00:00.000Z", viewers: 5, at: "2026-09-25T17:02:00.000Z" },
+      db,
+    );
+    const t = Date.parse("2026-09-25T17:30:00Z") / 1000;
+    const payload = await body(await handleApiRequest(request(`/api/recordings/at?t=${t}&channel=kick:klaun-0k`), { db }));
+    expect(payload.live).toMatchObject({ platform: "kick", channel: "klaun-0k", streamId: "s-live" });
+  });
+
+  test("asks for a time and well-formed channels", async () => {
+    const db = makeTestDb();
+    expect((await handleApiRequest(request("/api/recordings/at"), { db })).status).toBe(400);
+    expect((await handleApiRequest(request("/api/recordings/at?t=1&channel=youtube:x"), { db })).status).toBe(400);
   });
 });

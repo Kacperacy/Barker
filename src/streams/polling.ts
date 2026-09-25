@@ -6,6 +6,7 @@ import { getKickBroadcasterId, getKickLivestreamsByBroadcasterIds } from "../kic
 import { getStreamData } from "../twitch/api";
 import { closeOpenStreams, recordStreamSample } from "../database/repositories/streams";
 import type { Platform } from "../types";
+import { syncRecordingsSafely } from "../recordings/sync";
 
 // Stream history for the logged channels: every poll records whether each one is
 // live, its title and category, and a viewer-count sample.
@@ -128,7 +129,10 @@ export async function pollStreamsOnce(deps: StreamPollDeps = {}): Promise<number
         recorded++;
       } else {
         clearLiveBroadcast(platform, login);
-        closeOpenStreams(platform, login);
+        // A stream that just ended: its VOD shows up on the platform shortly after.
+        if (closeOpenStreams(platform, login) > 0 && !deps.fetchLive) {
+          setTimeout(() => void syncRecordingsSafely(), 3 * 60_000).unref?.();
+        }
       }
     }
   }

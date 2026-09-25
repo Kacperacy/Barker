@@ -57,6 +57,9 @@ const envSchema = z.object({
   // Stream history (streams/polling.ts): how often the logged channels are
   // checked for being live, which is also the viewer-graph resolution.
   STREAM_HISTORY_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(120000),
+  // How often the platforms' VOD lists are re-read (recordings/sync.ts); a
+  // stream ending also triggers a read.
+  RECORDING_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(600000),
 
   // Read API and webhook receiver (src/web/server.ts). Kick delivers events by
   // webhook only, so this port has to be reachable from the internet through

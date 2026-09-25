@@ -44,6 +44,12 @@ import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
 import { handleKickWebhookRequest, type KickWebhookDeps } from "../kick/webhooks";
 import { API_ENDPOINTS, API_VERSION, openapiDocument } from "./openapi";
 import { handleAccountRequest } from "./accountRoutes";
+import {
+  listRecordings,
+  recordingsAt,
+  type ChannelRef,
+  type RecordingRow,
+} from "../database/repositories/recordings";
 import { RateLimiter, throttle } from "./rateLimit";
 
 // The read API is called from the browser through the front end's own proxy, but
@@ -253,6 +259,37 @@ function toApiStream(row: StreamRow) {
     chatters: row.chatters,
     bans: row.bans,
     timeouts: row.timeouts,
+  };
+}
+
+// `channel=kick:klaun-0k&channel=twitch:klaun___0k`; none means all channels.
+function channelParams(url: URL): ChannelRef[] {
+  return url.searchParams.getAll("channel").map((raw) => {
+    const [platform, ...rest] = raw.split(":");
+    const login = rest.join(":").trim().toLowerCase();
+    if ((platform !== "kick" && platform !== "twitch") || login === "") {
+      invalid("invalid channel: expected <kick|twitch>:<login>");
+    }
+    return { platform, login } as ChannelRef;
+  });
+}
+
+// A recording as a client sees it. `source` is Kick's HLS playlist; a Twitch
+// recording plays in Twitch's embed by `id`.
+function toApiRecording(row: RecordingRow) {
+  return {
+    platform: row.platform,
+    id: row.video_id,
+    channel: row.channel_login,
+    streamId: row.stream_id,
+    title: row.title,
+    category: row.category,
+    startedAt: row.started_at,
+    durationSeconds: row.duration_seconds,
+    source: row.source_url,
+    thumbnail: row.thumbnail_url,
+    views: row.views,
+    gone: row.gone_at !== null,
   };
 }
 
@@ -493,6 +530,51 @@ async function handleRequest(
       db,
     );
     return json({ ...page, streams: page.streams.map(toApiStream) });
+  }
+
+  // Recordings (VODs) on both platforms, newest first; `channel` repeats
+  // ("kick:klaun-0k", "twitch:klaun___0k"). Gone ones only with includeGone.
+  if (url.pathname === "/api/recordings") {
+    const page = listRecordings(
+      channelParams(url),
+      {
+        limit: intParam(url, "limit", 100, 1),
+        offset: intParam(url, "offset", 0),
+        includeGone: boolParam(url, "includeGone"),
+      },
+      db,
+    );
+    return json({ ...page, recordings: page.recordings.map(toApiRecording) });
+  }
+
+  // What covers one instant (unix seconds): each platform's recording with the
+  // offset into it, and the stream if it is still live — which is how a short
+  // link (/m/<time>) finds its video on either platform.
+  if (url.pathname === "/api/recordings/at") {
+    const t = intParam(url, "t", -1);
+    if (t < 0) invalid("t (unix seconds) is required");
+    const channels = channelParams(url);
+    const recordings = recordingsAt(channels, t, db).map((row) => ({
+      ...toApiRecording(row),
+      offset: Math.max(0, t - Math.floor(Date.parse(row.started_at) / 1000)),
+    }));
+    const live = db
+      .query(
+        `SELECT platform, stream_id, broadcaster_login, started_at FROM streams
+          WHERE ended_at IS NULL AND CAST(strftime('%s', started_at) AS INTEGER) - 60 <= ?1`,
+      )
+      .all(t) as { platform: string; stream_id: string; broadcaster_login: string; started_at: string }[];
+    const inChannels = (row: { platform: string; broadcaster_login: string }) =>
+      channels.length === 0 ||
+      channels.some((channel) => channel.platform === row.platform && channel.login === row.broadcaster_login);
+    const liveRow = live.find(inChannels) ?? null;
+    return json({
+      t,
+      recordings,
+      live: liveRow
+        ? { platform: liveRow.platform, channel: liveRow.broadcaster_login, streamId: liveRow.stream_id, startedAt: liveRow.started_at }
+        : null,
+    });
   }
 
   // One broadcast's viewer count over time, one sample per poll.
