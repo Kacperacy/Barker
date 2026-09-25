@@ -27,6 +27,11 @@ process.env.DB_PATH = testDbDir;
 process.env.CHAT_LOG_ENABLED = "true";
 process.env.CHAT_LOG_CHANNELS = "twitch:alice,kick:alice";
 
+// Site accounts: one admin (kick "boss"), the default site origin, and a banned
+// word for the highlight-note filter.
+process.env.ADMIN_ACCOUNTS = "kick:boss";
+process.env.HIGHLIGHT_BANNED_WORDS = "zakazane";
+
 // Keep the Discord send-queue pacing negligible so queue tests run fast.
 process.env.DISCORD_QUEUE_DELAY_MS = "5";
 
