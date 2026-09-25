@@ -43,6 +43,7 @@ import {
 import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
 import { handleKickWebhookRequest, type KickWebhookDeps } from "../kick/webhooks";
 import { API_ENDPOINTS, API_VERSION, openapiDocument } from "./openapi";
+import { handleAccountRequest } from "./accountRoutes";
 
 // The read API is called from the browser through the front end's own proxy, but
 // it is left CORS-open too: the data is the channel's public chat, and being able
@@ -57,6 +58,9 @@ const CORS_HEADERS = {
 export interface ApiDeps {
   db?: Database;
   kick?: KickWebhookDeps;
+  // Injectable for tests: the OAuth providers and the clock.
+  fetchImpl?: typeof fetch;
+  now?: () => Date;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -299,6 +303,14 @@ async function handleRequest(
     if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
     return handleKickWebhookRequest(request, deps.kick);
   }
+
+  // Login, highlights and moderation carry their own (session) auth.
+  const account = await handleAccountRequest(request, url, {
+    db,
+    fetchImpl: deps.fetchImpl,
+    now: deps.now,
+  });
+  if (account) return account;
 
   if (url.pathname.startsWith("/api/") && !isAuthorized(request, url)) {
     return json({ error: "unauthorized" }, 401);

@@ -64,6 +64,22 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(3001),
   // Public base URL of this API, used to print the exact webhook path to register.
   PUBLIC_BASE_URL: z.string().default(""),
+
+  // Site accounts and highlights (src/auth, src/highlights). The site reaches
+  // Barker through its own /barker proxy, so login callbacks and the session
+  // cookie live on the site's origin.
+  SITE_URL: z.string().default("https://www.klaun.live"),
+  // Origins allowed to send state-changing requests (login forms, marking).
+  SITE_ORIGINS: z
+    .string()
+    .default("https://www.klaun.live,https://klaun.live,http://localhost:5173,http://localhost:4173,http://localhost:5199"),
+  // "<platform>:<login>,…" — accounts with full control (roles, audit log).
+  ADMIN_ACCOUNTS: z.string().default(""),
+  // How far the live embed runs behind real time: a live mark is placed this
+  // many seconds before the click.
+  HIGHLIGHT_LIVE_DELAY_S: z.coerce.number().int().nonnegative().default(20),
+  // Extra words a highlight note may not contain, comma-separated.
+  HIGHLIGHT_BANNED_WORDS: z.string().default(""),
   // Optional. When set, the read endpoints require it (`Authorization: Bearer` or
   // `?token=`); empty leaves them public, which is how this chat is shown anyway.
   READ_API_TOKEN: z.string().default(""),
