@@ -34,6 +34,12 @@ import {
   type ModerationMetric,
   type SeriesOrder,
 } from "../database/repositories/chatStats";
+import {
+  DEFAULT_STREAM_PAGE,
+  listStreams,
+  listViewerSamples,
+  type StreamRow,
+} from "../database/repositories/streams";
 import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
 import { handleKickWebhookRequest, type KickWebhookDeps } from "../kick/webhooks";
 import { API_ENDPOINTS, API_VERSION, openapiDocument } from "./openapi";
@@ -217,6 +223,31 @@ function toApiModerationEvent(row: ModerationEventRow) {
 }
 
 
+// A broadcast as a client sees it. `endedAt` is null while it is live; the
+// duration of a live stream runs to the last poll that saw it.
+function toApiStream(row: StreamRow) {
+  const start = Date.parse(row.started_at);
+  const end = Date.parse(row.ended_at ?? row.last_seen_at);
+  return {
+    platform: row.platform,
+    id: row.stream_id,
+    channel: row.broadcaster_login,
+    title: row.title,
+    category: row.category,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    live: row.ended_at === null,
+    durationSeconds:
+      Number.isNaN(start) || Number.isNaN(end) ? null : Math.max(0, Math.round((end - start) / 1000)),
+    peakViewers: row.peak_viewers,
+    avgViewers: row.avg_viewers,
+    messages: row.messages,
+    chatters: row.chatters,
+    bans: row.bans,
+    timeouts: row.timeouts,
+  };
+}
+
 function isAuthorized(request: Request, url: URL): boolean {
   if (!env.READ_API_TOKEN) return true;
 
@@ -398,6 +429,30 @@ async function handleRequest(
       db,
     );
     return json({ groupBy, metric, order, limit, count: rows.length, rows });
+  }
+
+  // Broadcasts of the logged channels, newest first, with their viewer peak and
+  // average and what happened in chat during each.
+  if (url.pathname === "/api/streams") {
+    const page = listStreams(
+      {
+        platform: platformParam(url),
+        login: url.searchParams.get("login") ?? undefined,
+        limit: intParam(url, "limit", DEFAULT_STREAM_PAGE, 1),
+        offset: intParam(url, "offset", 0),
+      },
+      db,
+    );
+    return json({ ...page, streams: page.streams.map(toApiStream) });
+  }
+
+  // One broadcast's viewer count over time, one sample per poll.
+  if (url.pathname === "/api/streams/viewers") {
+    const platform = platformParam(url);
+    const id = url.searchParams.get("id")?.trim();
+    if (!platform) invalid("platform is required");
+    if (!id) invalid("id is required");
+    return json({ platform, id, samples: listViewerSamples(platform, id, db) });
   }
 
   return json({ error: "not found" }, 404);
