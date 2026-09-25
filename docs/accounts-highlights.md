@@ -93,3 +93,17 @@ Kick's signed webhooks and `/health` are not throttled. Also:
 - Expired sessions are purged on each login.
 - `POST /csp-report` receives the site's Content-Security-Policy violation
   reports and logs each distinct one at most hourly.
+
+## Recordings and short links
+
+`recordings` holds the logged channels' VODs on both platforms, re-read every
+`RECORDING_SYNC_INTERVAL_MS` (10 min) and a few minutes after a stream ends:
+Kick from `kick.com/api/v2/channels/<slug>/videos` (what Kick still keeps),
+Twitch from Helix `GET /videos?type=archive` (7–60 days). A recording the
+platform stops listing is kept with `gone: true`.
+
+- `GET /api/recordings?channel=kick:<slug>&channel=twitch:<login>` — newest first.
+- `GET /api/recordings/at?t=<unix>&channel=…` — the recordings covering that
+  second (60 s slack) with the `offset` into each, plus `live` when the second
+  belongs to a stream still running. The site's short links (`/m/<time>`,
+  `/vod/<start>`) are resolved with it.

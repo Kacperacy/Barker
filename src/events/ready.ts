@@ -10,6 +10,7 @@ import { startDailySummaryTimer } from "../riot/summary";
 import { startKickEventSubscriptionRefresh } from "../kick/events";
 import { startKickChatSocket } from "../kick/chatSocket";
 import { startStreamHistoryPolling } from "../streams/polling";
+import { startRecordingSync } from "../recordings/sync";
 import { startChatRetention } from "../chat/retention";
 import { logChatLoggingStatus } from "../chat/diagnostics";
 import { isChatLoggingEnabled } from "../chat/ingest";
@@ -36,6 +37,7 @@ export default (client: Client) => {
     startKickEventSubscriptionRefresh();
     if (isChatLoggingEnabled()) void startKickChatSocket();
     startStreamHistoryPolling();
+    startRecordingSync();
     startChatRetention();
   });
 };
