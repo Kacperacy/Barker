@@ -17,7 +17,7 @@ cookie is first-party on the site.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SITE_URL` | `https://www.klaun.live` | Builds the OAuth redirect URLs. |
-| `SITE_ORIGINS` | the site + localhost dev ports | Origins allowed to send state-changing requests. |
+| `SITE_ORIGINS` | `https://www.klaun.live,https://klaun.live` | Origins allowed to send state-changing requests (add a localhost origin for local development). |
 | `ADMIN_ACCOUNTS` | `""` | `kick:<slug>,twitch:<login>` — full control: roles and the audit log. |
 | `HIGHLIGHT_LIVE_DELAY_S` | `20` | How far the live embed lags; a live mark is placed this long before the click. |
 | `HIGHLIGHT_BANNED_WORDS` | `""` | Comma-separated words a note may not contain (case/diacritics-insensitive). |
@@ -67,3 +67,29 @@ Marks are public immediately, so:
   admins at `GET /api/mod/log`.
 - **Cross-site requests:** state-changing requests must carry an `Origin` from
   `SITE_ORIGINS`, on top of the SameSite cookie.
+
+## Rate limits and other hardening
+
+Every request is counted per claimed client (the address before the proxy's
+own hop in `X-Forwarded-For`) and per peer (the proxy's last hop — a Vercel
+edge, or a direct caller), the peer limit being 20× the client's so a direct
+caller faking client addresses is still capped. Over a limit: `429` with
+`Retry-After`.
+
+| Kind | Per client |
+| --- | --- |
+| Login start / callback | 20 per 10 min |
+| Reports, CSP reports | 10 per min |
+| Other writes | 60 per min |
+| Reads | 240 per min |
+
+Kick's signed webhooks and `/health` are not throttled. Also:
+
+- Request bodies are capped at 256 KB.
+- A login's `return` path must be a plain same-site path; tabs, newlines and
+  backslashes (which browsers turn into `//other-site`) are refused.
+- Reports: 20 per viewer per day, none from a blocked viewer.
+- `GET /api/highlights` windows are at most 62 days and 2000 marks.
+- Expired sessions are purged on each login.
+- `POST /csp-report` receives the site's Content-Security-Policy violation
+  reports and logs each distinct one at most hourly.

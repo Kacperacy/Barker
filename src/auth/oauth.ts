@@ -32,10 +32,15 @@ function challenge(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
-// Only a same-site path may be returned to: "/vods", never "//evil.test".
+// Only a same-site path may be returned to: "/vods", never another site.
+// Browsers drop tabs and newlines from URLs and read "\\" as "/", so
+// "/<TAB>/evil.test" or "/\\evil.test" would become "//evil.test" — a jump to
+// another site. Only plain path characters are accepted.
+const SAFE_PATH = /^\/(?![/\\])[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/;
+
 export function safeReturnPath(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return "/";
-  return raw.slice(0, 500);
+  if (!raw || raw.length > 500 || !SAFE_PATH.test(raw)) return "/";
+  return raw;
 }
 
 export function beginLogin(

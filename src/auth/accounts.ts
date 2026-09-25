@@ -72,6 +72,12 @@ export function getUser(id: number, db: Database = defaultDb): UserRow | null {
   return (db.query("SELECT * FROM users WHERE id = ?1").get(id) as UserRow | null) ?? null;
 }
 
+// Drops expired sessions; called on each login, which is often enough to keep
+// the table from growing without a timer.
+export function purgeExpiredSessions(db: Database = defaultDb, now: string = new Date().toISOString()): number {
+  return db.query("DELETE FROM sessions WHERE expires_at <= ?1").run(now).changes;
+}
+
 // Returns the raw token for the cookie; only its hash is stored.
 export function createSession(
   userId: number,

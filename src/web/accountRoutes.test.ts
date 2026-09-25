@@ -5,6 +5,7 @@ import { insertModerationEvent } from "../database/repositories/moderationEvents
 import { resetLiveBroadcasts, setLiveBroadcast } from "../chat/live";
 import { createSession, upsertUser } from "../auth/accounts";
 import { handleApiRequest } from "./server";
+import { RateLimiter } from "./rateLimit";
 
 const SITE = "https://www.klaun.live";
 const NOW = new Date("2026-09-24T18:00:00.000Z");
@@ -42,7 +43,7 @@ async function call(
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
       redirect: "manual",
     }),
-    { db, fetchImpl, now: () => clock },
+    { db, fetchImpl, now: () => clock, limiter: new RateLimiter() },
   );
   const text = await response.text();
   return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers };
@@ -59,7 +60,7 @@ describe("login", () => {
   test("Kick: PKCE authorize, code exchange, session cookie, back to the page", async () => {
     const start = await handleApiRequest(
       new Request("http://barker.test/auth/kick/start?return=/vods"),
-      { db, now: () => clock },
+      { db, now: () => clock, limiter: new RateLimiter() },
     );
     expect(start.status).toBe(302);
     const authorize = new URL(start.headers.get("location")!);
@@ -80,7 +81,7 @@ describe("login", () => {
     const state = authorize.searchParams.get("state")!;
     const callback = await handleApiRequest(
       new Request(`http://barker.test/auth/kick/callback?code=c&state=${state}`),
-      { db, fetchImpl: fakeFetch, now: () => clock },
+      { db, fetchImpl: fakeFetch, now: () => clock, limiter: new RateLimiter() },
     );
     expect(callback.status).toBe(302);
     expect(callback.headers.get("location")).toBe("/vods");
@@ -94,7 +95,7 @@ describe("login", () => {
     // The state is single use.
     const replay = await handleApiRequest(
       new Request(`http://barker.test/auth/kick/callback?code=c&state=${state}`),
-      { db, fetchImpl: fakeFetch, now: () => clock },
+      { db, fetchImpl: fakeFetch, now: () => clock, limiter: new RateLimiter() },
     );
     expect(replay.headers.get("location")).toBe("/?login=error");
   });
@@ -102,7 +103,7 @@ describe("login", () => {
   test("never returns to another site", async () => {
     const start = await handleApiRequest(
       new Request("http://barker.test/auth/twitch/start?return=//evil.test"),
-      { db, now: () => clock },
+      { db, now: () => clock, limiter: new RateLimiter() },
     );
     const state = new URL(start.headers.get("location")!).searchParams.get("state");
     const row = db.query("SELECT return_to FROM oauth_states WHERE state = ?1").get(state) as { return_to: string };
@@ -215,5 +216,51 @@ describe("moderation", () => {
     expect((await call("/api/mod/log", { cookie: carol.cookie })).status).toBe(403);
     const log = await call("/api/mod/log", { cookie: admin.cookie });
     expect(log.body.actions.map((entry: { action: string }) => entry.action)).toEqual(["user.mute", "user.grant_mod"]);
+  });
+});
+
+describe("abuse limits", () => {
+  test("a viewer's reports are capped per day, and a blocked viewer cannot report", async () => {
+    live();
+    const marks: number[] = [];
+    for (let i = 0; i < 21; i++) {
+      const author = user(`author${i}`);
+      const { body } = await call("/api/highlights", { method: "POST", cookie: author.cookie, body: { channel } });
+      marks.push(body.id);
+    }
+    const reporter = user("reporter");
+    for (let i = 0; i < 20; i++) {
+      expect((await call(`/api/highlights/${marks[i]}/report`, { method: "POST", cookie: reporter.cookie, body: {} })).status).toBe(200);
+    }
+    expect((await call(`/api/highlights/${marks[20]}/report`, { method: "POST", cookie: reporter.cookie, body: {} })).status).toBe(429);
+
+    const admin = user("boss");
+    const muted = user("muted");
+    await call(`/api/mod/users/${muted.row.id}/mute`, { method: "POST", cookie: admin.cookie, body: { minutes: 60 } });
+    expect((await call(`/api/highlights/${marks[0]}/report`, { method: "POST", cookie: muted.cookie, body: {} })).status).toBe(403);
+  });
+
+  test("refuses a moments window wider than 62 days", async () => {
+    const res = await call("/api/highlights?platform=kick&login=alice&from=2026-01-01T00:00:00Z&to=2026-09-01T00:00:00Z");
+    expect(res.status).toBe(400);
+  });
+
+  test("drops expired sessions when someone logs in", async () => {
+    const old = user("old");
+    db.query("UPDATE sessions SET expires_at = '2000-01-01T00:00:00.000Z' WHERE user_id = ?1").run(old.row.id);
+    const start = await handleApiRequest(new Request("http://barker.test/auth/kick/start"), { db, now: () => clock, limiter: new RateLimiter() });
+    const state = new URL(start.headers.get("location")!).searchParams.get("state");
+    const fakeFetch = (async (input: string | URL | Request) =>
+      String(input).includes("/oauth/token")
+        ? new Response(JSON.stringify({ access_token: "t" }))
+        : new Response(JSON.stringify({ data: [{ user_id: 1, name: "New" }] }))) as typeof fetch;
+    await handleApiRequest(new Request(`http://barker.test/auth/kick/callback?code=c&state=${state}`), {
+      db,
+      fetchImpl: fakeFetch,
+      now: () => clock,
+      limiter: new RateLimiter(),
+    });
+    const left = db.query("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?1").get(old.row.id) as { n: number };
+    expect(left.n).toBe(0);
   });
 });
