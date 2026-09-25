@@ -44,6 +44,7 @@ import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
 import { handleKickWebhookRequest, type KickWebhookDeps } from "../kick/webhooks";
 import { API_ENDPOINTS, API_VERSION, openapiDocument } from "./openapi";
 import { handleAccountRequest } from "./accountRoutes";
+import { RateLimiter, throttle } from "./rateLimit";
 
 // The read API is called from the browser through the front end's own proxy, but
 // it is left CORS-open too: the data is the channel's public chat, and being able
@@ -53,6 +54,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
   "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
 } as const;
 
 export interface ApiDeps {
@@ -61,6 +63,8 @@ export interface ApiDeps {
   // Injectable for tests: the OAuth providers and the clock.
   fetchImpl?: typeof fetch;
   now?: () => Date;
+  // Tests pass their own, so one test's traffic does not throttle another's.
+  limiter?: RateLimiter;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -266,6 +270,27 @@ function isAuthorized(request: Request, url: URL): boolean {
   return url.searchParams.get("token") === env.READ_API_TOKEN;
 }
 
+const seenCspReports = new Map<string, number>();
+
+function logCspReport(body: string): void {
+  let report: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(body.slice(0, 20_000)) as Record<string, unknown> | Record<string, unknown>[];
+    const first = Array.isArray(parsed) ? parsed[0] : parsed;
+    report = ((first?.["csp-report"] ?? first?.body ?? first) ?? {}) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const directive = String(report["violated-directive"] ?? report["effectiveDirective"] ?? report["effective-directive"] ?? "?");
+  const blocked = String(report["blocked-uri"] ?? report["blockedURL"] ?? "?").slice(0, 200);
+  const key = `${directive} ${blocked}`;
+  const now = Date.now();
+  if ((seenCspReports.get(key) ?? 0) > now - 3_600_000) return;
+  if (seenCspReports.size > 500) seenCspReports.clear();
+  seenCspReports.set(key, now);
+  logger.warn(`[CSP] ${directive} blocked ${blocked}`);
+}
+
 // Split out from the server so the routes can be tested without binding a port.
 export async function handleApiRequest(
   request: Request,
@@ -294,8 +319,20 @@ async function handleRequest(
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
+  const limited = throttle(request, url.pathname, deps.limiter);
+  if (limited) return limited;
+
   if (url.pathname === "/health") {
     return json({ ok: true, chatLogging: isChatLoggingEnabled() });
+  }
+
+  // The site's Content-Security-Policy reports violations here (report-only
+  // while the policy is being tuned). Logged once per distinct directive and
+  // blocked URL per hour, so a noisy page cannot flood the log.
+  if (url.pathname === "/csp-report") {
+    if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+    logCspReport(await request.text());
+    return new Response(null, { status: 204 });
   }
 
   // Kick's only delivery mechanism. Verified against the signing key inside.
@@ -474,6 +511,9 @@ export function startApiServer() {
   const server = Bun.serve({
     port: env.API_PORT,
     hostname: "0.0.0.0",
+    // Nothing Barker accepts is large (Kick's webhooks are a few KB); Bun's
+    // default would read up to 128 MB into memory per request.
+    maxRequestBodySize: 256 * 1024,
     fetch: (request) => handleApiRequest(request),
   });
 

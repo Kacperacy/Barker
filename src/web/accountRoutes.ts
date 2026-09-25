@@ -8,6 +8,7 @@ import {
   activeMute,
   createSession,
   deleteSession,
+  purgeExpiredSessions,
   getUser,
   isModerator,
   logModAction,
@@ -50,6 +51,7 @@ export interface AccountDeps {
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
 };
 
 function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -147,6 +149,7 @@ export async function handleAccountRequest(
       const profile = await finishLogin(platform, code, state.verifier, deps.fetchImpl);
       if (!profile) return redirect(`${state.returnTo}${state.returnTo.includes("?") ? "&" : "?"}login=error`);
       const user = upsertUser(profile, db, now.toISOString());
+      purgeExpiredSessions(db, now.toISOString());
       return redirect(state.returnTo, { "Set-Cookie": sessionCookie(createSession(user.id, db, now)) });
     }
 

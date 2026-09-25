@@ -72,7 +72,7 @@ const envSchema = z.object({
   // Origins allowed to send state-changing requests (login forms, marking).
   SITE_ORIGINS: z
     .string()
-    .default("https://www.klaun.live,https://klaun.live,http://localhost:5173,http://localhost:4173,http://localhost:5199"),
+    .default("https://www.klaun.live,https://klaun.live"),
   // "<platform>:<login>,…" — accounts with full control (roles, audit log).
   ADMIN_ACCOUNTS: z.string().default(""),
   // How far the live embed runs behind real time: a live mark is placed this

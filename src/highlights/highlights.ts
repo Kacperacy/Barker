@@ -31,6 +31,12 @@ const WINDOW_MS = 12 * 3600 * 1000;
 // Marks this close to the first mark of a moment belong to it.
 export const MOMENT_SPAN_S = 90;
 export const REPORTS_TO_HIDE = 3;
+// Reports per viewer per day: a few throwaway accounts could otherwise hide
+// every mark on the site by reporting all of them.
+export const MAX_REPORTS_PER_DAY = 20;
+// The widest window one moments query may ask for, and the most marks it reads.
+const MOMENTS_MAX_SPAN_MS = 62 * 86_400_000;
+const MOMENTS_MAX_MARKS = 2000;
 // A mark made on a recording may reach this far back.
 const VOD_MARK_MAX_AGE_MS = 90 * 86_400_000;
 const LIVE_BACK_OPTIONS = [0, 30, 60];
@@ -217,6 +223,9 @@ export function listMoments(
   viewerId: number | null,
   db: Database = defaultDb,
 ): Moment[] {
+  if (Date.parse(to) - Date.parse(from) > MOMENTS_MAX_SPAN_MS) {
+    throw new HighlightError("Za szeroki zakres czasu (najwyżej 62 dni).", 400);
+  }
   const rows = db
     .query(
       `SELECT h.id, h.user_id, h.at, h.kind, h.note, h.note_removed, h.source,
@@ -225,9 +234,10 @@ export function listMoments(
         WHERE h.channel_platform = ?1 AND h.channel_login = ?2
           AND h.at >= ?3 AND h.at <= ?4
           AND h.deleted = 0 AND h.hidden = 0
-        ORDER BY h.at`,
+        ORDER BY h.at
+        LIMIT ?5`,
     )
-    .all(channel.platform, channel.login.toLowerCase(), from, to) as MarkRow[];
+    .all(channel.platform, channel.login.toLowerCase(), from, to, MOMENTS_MAX_MARKS) as MarkRow[];
 
   const groups: MarkRow[][] = [];
   for (const row of rows) {
@@ -283,6 +293,17 @@ export function reportHighlight(
     | null;
   if (!mark) throw new HighlightError("Nie ma takiego momentu.", 404);
   if (mark.user_id === user.id) throw new HighlightError("Nie możesz zgłosić własnego momentu.", 400);
+  if (activeMute(user.id, db, now)) {
+    throw new HighlightError("Zablokowane konto nie może zgłaszać momentów.", 403);
+  }
+  const today = (
+    db
+      .query("SELECT COUNT(*) AS n FROM highlight_reports WHERE user_id = ?1 AND created_at > ?2")
+      .get(user.id, new Date(Date.parse(now) - 86_400_000).toISOString()) as { n: number }
+  ).n;
+  if (today >= MAX_REPORTS_PER_DAY) {
+    throw new HighlightError(`Limit ${MAX_REPORTS_PER_DAY} zgłoszeń na dobę.`, 429);
+  }
 
   const text = reason === null ? null : reason.replace(/\s+/g, " ").trim().slice(0, 200) || null;
   const inserted = db
