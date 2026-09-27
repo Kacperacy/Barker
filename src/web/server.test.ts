@@ -436,6 +436,60 @@ describe("GET /api/recordings/at", () => {
     expect(payload.live).toMatchObject({ platform: "kick", channel: "klaun-0k", streamId: "s-live" });
   });
 
+  test("while the stream runs, its recording (listed with duration 0) covers everything up to now", async () => {
+    const db = makeTestDb();
+    // Two hours ago, so "up to now" reaches well past the instant asked about.
+    const startMs = Math.floor(Date.now() / 1000) * 1000 - 2 * 3600_000;
+    const started = new Date(startMs).toISOString();
+    recordStreamSample(
+      { platform: "kick", streamId: "uuid-live", broadcasterLogin: "klaun-0k", startedAt: new Date(startMs - 3000).toISOString(), viewers: 5, at: new Date().toISOString() },
+      db,
+    );
+    syncRecordings(
+      "kick",
+      "klaun-0k",
+      [{ platform: "kick", videoId: "129437958", channelLogin: "klaun-0k", startedAt: started, durationSeconds: 0, sourceUrl: "https://stream.kick.com/live/master.m3u8" }],
+      db,
+    );
+    const start = Date.parse(started) / 1000;
+    const t = start + 45 * 60;
+    const live = await body(await handleApiRequest(request(`/api/recordings/at?t=${t}&channel=kick:klaun-0k`), { db }));
+    expect(live.recordings).toHaveLength(1);
+    expect(live.recordings[0]).toMatchObject({ id: "129437958", live: true, offset: 45 * 60, source: "https://stream.kick.com/live/master.m3u8" });
+    // How long it has run so far, not Kick's 0.
+    expect(live.recordings[0].durationSeconds).toBeGreaterThan(45 * 60);
+
+    const listed = await body(await handleApiRequest(request("/api/recordings?channel=kick:klaun-0k"), { db }));
+    expect(listed.recordings[0].live).toBe(true);
+
+    // An earlier recording of the channel is finished even if its broadcast
+    // was never closed.
+    syncRecordings(
+      "kick",
+      "klaun-0k",
+      [
+        { platform: "kick", videoId: "older", channelLogin: "klaun-0k", startedAt: new Date(startMs - 4 * 3600_000).toISOString(), durationSeconds: 3600, sourceUrl: "https://stream.kick.com/old/master.m3u8" },
+        { platform: "kick", videoId: "129437958", channelLogin: "klaun-0k", startedAt: started, durationSeconds: 0, sourceUrl: "https://stream.kick.com/live/master.m3u8" },
+      ],
+      db,
+    );
+    // (As production had it: an old broadcast left open by a quick restart.)
+    db.query(
+      `INSERT INTO streams (platform, stream_id, broadcaster_login, started_at, last_seen_at, ended_at)
+       VALUES ('kick', 'uuid-old', 'klaun-0k', ?1, ?2, NULL)`,
+    ).run(new Date(startMs - 4 * 3600_000).toISOString(), new Date(startMs - 3 * 3600_000).toISOString());
+    const both = await body(await handleApiRequest(request("/api/recordings?channel=kick:klaun-0k"), { db }));
+    expect(both.recordings.map((row: { id: string; live: boolean }) => [row.id, row.live])).toEqual([
+      ["129437958", true],
+      ["older", false],
+    ]);
+
+    // Once the stream has ended, the recording is what the platform says again.
+    db.query("UPDATE streams SET ended_at = last_seen_at").run();
+    const after = await body(await handleApiRequest(request(`/api/recordings/at?t=${t}&channel=kick:klaun-0k`), { db }));
+    expect(after.recordings).toEqual([]);
+  });
+
   test("asks for a time and well-formed channels", async () => {
     const db = makeTestDb();
     expect((await handleApiRequest(request("/api/recordings/at"), { db })).status).toBe(400);

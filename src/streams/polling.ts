@@ -1,12 +1,15 @@
 import { env } from "../config";
 import { logger } from "../utils/logger";
 import { chatLogTargets, isChatLoggingEnabled } from "../chat/ingest";
-import { clearLiveBroadcast, setLiveBroadcast } from "../chat/live";
+import { clearLiveBroadcast, getLiveBroadcast, setLiveBroadcast } from "../chat/live";
 import { getKickBroadcasterId, getKickLivestreamsByBroadcasterIds } from "../kick/api";
 import { getStreamData } from "../twitch/api";
 import { closeOpenStreams, recordStreamSample } from "../database/repositories/streams";
 import type { Platform } from "../types";
 import { syncRecordingsSafely } from "../recordings/sync";
+
+// After go-live, when the platforms have usually listed the new VOD.
+const GO_LIVE_SYNC_DELAYS_MS = [60_000, 5 * 60_000];
 
 // Stream history for the logged channels: every poll records whether each one is
 // live, its title and category, and a viewer-count sample.
@@ -29,6 +32,13 @@ export interface StreamPollDeps {
   // lookup failed, so nothing is closed on its account).
   fetchLive?: (platform: Platform, logins: string[]) => Promise<Map<string, LiveSnapshot | null>>;
   now?: () => string;
+  // Called once when a channel goes live (default: sync recordings shortly
+  // after, when the platform lists the new VOD).
+  onGoLive?: (platform: Platform, login: string) => void;
+}
+
+function syncSoon(): void {
+  for (const delay of GO_LIVE_SYNC_DELAYS_MS) setTimeout(() => void syncRecordingsSafely(), delay).unref?.();
 }
 
 async function fetchKickLive(logins: string[]): Promise<Map<string, LiveSnapshot | null>> {
@@ -112,6 +122,12 @@ export async function pollStreamsOnce(deps: StreamPollDeps = {}): Promise<number
       if (!live.has(login)) continue;
       const snapshot = live.get(login) ?? null;
       if (snapshot) {
+        // Just went live: the platform creates the VOD now and keeps extending
+        // it, so fetch the list soon — moments from this stream then open the
+        // recording being made (not only once the stream is over).
+        if (!getLiveBroadcast(platform, login)) {
+          (deps.onGoLive ?? (deps.fetchLive ? () => {} : syncSoon))(platform, login);
+        }
         setLiveBroadcast(platform, login, {
           streamId: snapshot.streamId,
           startedAt: snapshot.startedAt,
