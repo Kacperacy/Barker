@@ -649,7 +649,7 @@ const SCHEMAS: Record<string, unknown> = {
   },
   Recording: {
     type: "object",
-    required: ["platform", "id", "channel", "startedAt", "durationSeconds", "gone"],
+    required: ["platform", "id", "channel", "startedAt", "durationSeconds", "live", "gone"],
     properties: {
       platform: { type: "string", enum: PLATFORM_VALUES },
       id: { type: "string", description: "The platform's video id (Kick: the livestream id)." },
@@ -658,7 +658,14 @@ const SCHEMAS: Record<string, unknown> = {
       title: { type: ["string", "null"] },
       category: { type: ["string", "null"] },
       startedAt: { type: "string", format: "date-time" },
-      durationSeconds: { type: "integer" },
+      durationSeconds: {
+        type: "integer",
+        description: "While live: how long the stream has run so far (the recording keeps growing).",
+      },
+      live: {
+        type: "boolean",
+        description: "Its stream is still running: the platform is still recording it. It covers everything up to now.",
+      },
       source: { type: ["string", "null"], description: "Kick's HLS master playlist; null for Twitch (play it by id in Twitch's embed)." },
       thumbnail: { type: ["string", "null"] },
       views: { type: ["integer", "null"] },

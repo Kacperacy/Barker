@@ -19,6 +19,29 @@ export interface RecordingRow {
   gone_at: string | null;
 }
 
+// A listed recording also says whether its stream is still running: the
+// platforms create the VOD at go-live and keep extending it (Kick lists it with
+// duration 0 until the end), so while live it covers everything up to now.
+export interface ListedRecordingRow extends RecordingRow {
+  is_live: 0 | 1;
+}
+
+// Live while an open broadcast of the same channel started within ten minutes
+// of the recording (the platforms start both within seconds of go-live) — and
+// only the channel's newest recording: an older one is finished by definition.
+const IS_LIVE = `(EXISTS (
+    SELECT 1 FROM streams s
+     WHERE s.platform = recordings.platform
+       AND s.broadcaster_login = recordings.channel_login
+       AND s.ended_at IS NULL
+       AND abs(CAST(strftime('%s', s.started_at) AS INTEGER) - CAST(strftime('%s', recordings.started_at) AS INTEGER)) <= 600
+  ) AND NOT EXISTS (
+    SELECT 1 FROM recordings newer
+     WHERE newer.platform = recordings.platform
+       AND newer.channel_login = recordings.channel_login
+       AND newer.started_at > recordings.started_at
+  ))`;
+
 export interface NewRecording {
   platform: Platform;
   videoId: string;
@@ -105,13 +128,14 @@ function channelCondition(channels: ChannelRef[], params: (string | number)[]): 
 }
 
 // Recordings covering an instant (unix seconds), with a little slack either
-// side: platforms start recording a moment after go-live.
+// side: platforms start recording a moment after go-live. One still being made
+// covers everything from its start on.
 export function recordingsAt(
   channels: ChannelRef[],
   unixSeconds: number,
   db: Database = defaultDb,
   slackSeconds = 60,
-): RecordingRow[] {
+): ListedRecordingRow[] {
   const params: (string | number)[] = [];
   const where = channelCondition(channels, params);
   params.push(unixSeconds, slackSeconds);
@@ -119,30 +143,29 @@ export function recordingsAt(
   const slack = `?${params.length}`;
   return db
     .query(
-      `SELECT * FROM recordings
-        WHERE ${where}
-          AND CAST(strftime('%s', started_at) AS INTEGER) - ${slack} <= ${t}
-          AND CAST(strftime('%s', started_at) AS INTEGER) + duration_seconds + ${slack} >= ${t}
+      `SELECT * FROM (SELECT recordings.*, ${IS_LIVE} AS is_live FROM recordings WHERE ${where})
+        WHERE CAST(strftime('%s', started_at) AS INTEGER) - ${slack} <= ${t}
+          AND (is_live = 1 OR CAST(strftime('%s', started_at) AS INTEGER) + duration_seconds + ${slack} >= ${t})
         ORDER BY gone_at IS NOT NULL, started_at DESC`,
     )
-    .all(...params) as RecordingRow[];
+    .all(...params) as ListedRecordingRow[];
 }
 
 export function listRecordings(
   channels: ChannelRef[],
   options: { limit?: number; offset?: number; includeGone?: boolean } = {},
   db: Database = defaultDb,
-): { recordings: RecordingRow[]; total: number } {
+): { recordings: ListedRecordingRow[]; total: number } {
   const params: (string | number)[] = [];
   const where = `${channelCondition(channels, params)}${options.includeGone ? "" : " AND gone_at IS NULL"}`;
   const limit = Math.min(Math.max(1, options.limit ?? 100), 500);
   const offset = Math.max(0, options.offset ?? 0);
   const recordings = db
     .query(
-      `SELECT * FROM recordings WHERE ${where} ORDER BY started_at DESC
+      `SELECT recordings.*, ${IS_LIVE} AS is_live FROM recordings WHERE ${where} ORDER BY started_at DESC
         LIMIT ?${params.length + 1} OFFSET ?${params.length + 2}`,
     )
-    .all(...params, limit, offset) as RecordingRow[];
+    .all(...params, limit, offset) as ListedRecordingRow[];
   const total = (
     db.query(`SELECT COUNT(*) AS n FROM recordings WHERE ${where}`).get(...params) as { n: number }
   ).n;

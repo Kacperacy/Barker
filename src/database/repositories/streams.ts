@@ -43,6 +43,12 @@ export function recordStreamSample(sample: StreamSample, db: Database = defaultD
       sample.at,
       sample.viewers,
     );
+    // A channel runs one broadcast at a time: a new one means any other still
+    // open ended (a quick restart between two polls never looked offline).
+    db.query(
+      `UPDATE streams SET ended_at = last_seen_at
+        WHERE platform = ?1 AND broadcaster_login = ?2 AND stream_id <> ?3 AND ended_at IS NULL`,
+    ).run(sample.platform, login, sample.streamId);
     db.query(
       `INSERT OR IGNORE INTO stream_viewer_samples (platform, stream_id, at, viewers)
        VALUES (?1, ?2, ?3, ?4)`,

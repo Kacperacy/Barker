@@ -48,7 +48,7 @@ import {
   listRecordings,
   recordingsAt,
   type ChannelRef,
-  type RecordingRow,
+  type ListedRecordingRow,
 } from "../database/repositories/recordings";
 import { RateLimiter, throttle } from "./rateLimit";
 
@@ -283,7 +283,11 @@ function channelParams(url: URL): ChannelRef[] {
 
 // A recording as a client sees it. `source` is Kick's HLS playlist; a Twitch
 // recording plays in Twitch's embed by `id`.
-function toApiRecording(row: RecordingRow) {
+// A recording still being made has run for as long as its stream (the
+// platform's own figure lags: Kick says 0 until the end).
+function toApiRecording(row: ListedRecordingRow, now = Date.now()) {
+  const live = row.is_live === 1;
+  const elapsed = Math.max(0, Math.floor((now - Date.parse(row.started_at)) / 1000));
   return {
     platform: row.platform,
     id: row.video_id,
@@ -292,7 +296,8 @@ function toApiRecording(row: RecordingRow) {
     title: row.title,
     category: row.category,
     startedAt: row.started_at,
-    durationSeconds: row.duration_seconds,
+    durationSeconds: live ? Math.max(row.duration_seconds, elapsed) : row.duration_seconds,
+    live,
     source: row.source_url,
     thumbnail: row.thumbnail_url,
     views: row.views,
@@ -591,7 +596,7 @@ async function handleRequest(
       },
       db,
     );
-    return json({ ...page, recordings: page.recordings.map(toApiRecording) });
+    return json({ ...page, recordings: page.recordings.map((row) => toApiRecording(row)) });
   }
 
   // What covers one instant (unix seconds): each platform's recording with the

@@ -70,4 +70,29 @@ describe("pollStreamsOnce", () => {
 
     expect(listStreams({}, db).streams[0]?.ended_at).toBeNull();
   });
+
+  test("asks for the recordings once when a channel goes live, not on every poll", async () => {
+    const wentLive: string[] = [];
+    const onGoLive = (platform: Platform, login: string) => wentLive.push(`${platform}:${login}`);
+    await pollStreamsOnce({ fetchLive: liveOn(snapshot(5)), now: () => "2026-09-24T17:02:00.000Z", onGoLive });
+    await pollStreamsOnce({ fetchLive: liveOn(snapshot(6)), now: () => "2026-09-24T17:04:00.000Z", onGoLive });
+    expect(wentLive).toEqual(["kick:alice"]);
+    await pollStreamsOnce({ fetchLive: liveOn(null), now: () => "2026-09-24T17:06:00.000Z", onGoLive });
+    await pollStreamsOnce({ fetchLive: liveOn(snapshot(1)), now: () => "2026-09-24T18:00:00.000Z", onGoLive });
+    expect(wentLive).toEqual(["kick:alice", "kick:alice"]);
+  });
+
+  test("a restart between two polls ends the previous broadcast", async () => {
+    await pollStreamsOnce({ fetchLive: liveOn(snapshot(5)), now: () => "2026-09-24T17:02:00.000Z", onGoLive: () => {} });
+    await pollStreamsOnce({
+      fetchLive: liveOn({ ...snapshot(3), streamId: "s-2", startedAt: "2026-09-24T19:00:00.000Z" }),
+      now: () => "2026-09-24T19:01:00.000Z",
+      onGoLive: () => {},
+    });
+    const streams = listStreams({ platform: "kick" }, db).streams;
+    expect(streams.map((stream) => [stream.stream_id, stream.ended_at])).toEqual([
+      ["s-2", null],
+      ["s-1", "2026-09-24T17:02:00.000Z"],
+    ]);
+  });
 });
